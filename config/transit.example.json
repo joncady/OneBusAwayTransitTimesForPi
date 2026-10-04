@@ -1,0 +1,23 @@
+{
+  "arrivalWindowMinutes": 90,
+  "maxArrivals": 10,
+  "modes": {
+    "train": {
+      "name": "<station name>",
+      "serviceLabel": "<service label>",
+      "plural": "trains",
+      "stops": [
+        { "id": "<northbound stop ID>", "direction": "Northbound" },
+        { "id": "<southbound stop ID>", "direction": "Southbound" }
+      ]
+    },
+    "bus": {
+      "name": "<bus stop name>",
+      "serviceLabel": "<bus route label>",
+      "plural": "buses",
+      "stops": [
+        { "id": "<bus stop ID>", "direction": "" }
+      ]
+    }
+  }
+}

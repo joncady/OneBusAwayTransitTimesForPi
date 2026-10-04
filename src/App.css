@@ -1,0 +1,91 @@
+#root { height: 100vh; }
+.dashboard { height: 100vh; max-width: 1000px; margin: 0 auto; padding: 12px 30px 9px 12px; display: flex; flex-direction: column; overflow: hidden; }
+.station-heading { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 1px 0 9px; }
+.station-title-row { min-width: 0; display: flex; align-items: center; gap: 11px; }
+.station-name { min-width: 0; display: flex; align-items: baseline; gap: 9px; }
+.eyebrow, .section-title, .clock-block span, .countdown span { font-family: Arial, sans-serif; font-size: 10px; letter-spacing: .04em; }
+.eyebrow { flex: 0 0 auto; margin: 0; color: #a3abae; white-space: nowrap; }
+.line-key { display: inline-block; width: 7px; height: 7px; margin-right: 2px; border-radius: 50%; background: #3dae2b; }
+.line-key.bus-key { background: #00a0df; }
+h1 { margin: 0; color: #f4f5f7; font-size: 23px; letter-spacing: -.035em; line-height: 1; font-weight: 600; white-space: nowrap; }
+h1 span { color: #92999c; font-weight: 400; }
+.clock-block { flex: 0 0 auto; display: flex; flex-direction: column; gap: 3px; text-align: right; }
+.clock-block time { font-family: Arial, sans-serif; font-size: 15px; }
+.clock-block span { color: #92999c; font-size: 8px; }
+.mode-switch { flex: 0 0 auto; display: flex; padding: 2px; border: 1px solid #343b3e; border-radius: 7px; background: #191c1f; }
+.mode-switch button { min-width: 64px; min-height: 38px; padding: 8px 12px; border: 0; border-radius: 5px; color: #a5adaf; background: transparent; cursor: pointer; font-size: 13px; }
+.mode-switch button.selected { color: #fff; background: #004b7c; }
+.mode-switch button:focus-visible, .refresh-button:focus-visible { outline: 1px solid #00a0df; outline-offset: 1px; }
+.arrivals-section { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.section-title { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; color: #c2c8ca; font-size: 9px; }
+.service-pill { padding: 3px 6px; border: 1px solid #343b34; border-radius: 99px; color: #72d463; font-size: 8px; letter-spacing: .03em; }
+.service-pill.service-error { border-color: #663c31; color: #ff9277; }
+.arrival-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y; scrollbar-width: thin; scrollbar-color: #62717a #191c1f; outline: none; }
+.arrival-scroll::-webkit-scrollbar { width: 8px; }
+.arrival-scroll::-webkit-scrollbar-track { border-radius: 5px; background: #191c1f; }
+.arrival-scroll::-webkit-scrollbar-thumb { border-radius: 5px; background: #62717a; }
+.arrival-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding-right: 7px; }
+.arrival-card { min-width: 0; min-height: 53px; display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid #303438; border-radius: 7px; background: #191c1f; }
+.empty-state { min-height: 55px; display: grid; place-items: center; padding: 12px; border: 1px solid #303438; border-radius: 7px; color: #a4acae; background: #191c1f; text-align: center; font-size: 14px; }
+.error-message { color: #ff9277; }
+.route-symbol { flex: 0 0 29px; width: 29px; height: 29px; display: grid; place-items: center; color: #fff; background: #3dae2b; border-radius: 50%; font-weight: 800; font-size: 12px; }
+.route-symbol.route-two { background: #00a0df; }
+.route-symbol.route-bus { border-radius: 6px; background: #00a0df; }
+.arrival-info { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 3px; }
+.arrival-info strong { overflow: hidden; color: #f2f4f3; font-size: 16px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.arrival-info span { overflow: hidden; color: #a5adaf; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.arrival-info i { padding: 0 2px; color: #ffb819; font-style: normal; }
+.countdown { display: flex; align-items: baseline; gap: 3px; margin-left: auto; color: #ffcf57; }
+.countdown strong { font-family: Arial, sans-serif; font-size: 25px; font-weight: 400; letter-spacing: -.04em; }
+.countdown span { color: #a5adaf; font-size: 8px; }
+.bottom-bar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 6px; margin-top: 6px; border-top: 1px solid #303438; }
+.update-info { display: flex; align-items: center; gap: 5px; color: #a4acae; font-size: 9px; white-space: nowrap; }
+.update-icon { color: #ffb819; font-size: 13px; }
+.controls { display: flex; align-items: center; gap: 5px; color: #c2c8ca; font-size: 9px; }
+.controls input { width: 39px; padding: 3px 2px; border: 1px solid #394044; border-radius: 5px; outline: none; color: #f5f6f5; background: #1b1e20; text-align: center; }
+.controls input:focus { border-color: #0091b3; }
+.refresh-button { width: 23px; height: 23px; border: 1px solid #444c4d; border-radius: 6px; color: #fff; background: #002e6d; cursor: pointer; font-size: 15px; }
+.refresh-button:hover { border-color: #0091b3; }
+.error-note { color: #ff9d85; }
+@media (max-width: 600px) and (orientation: portrait) {
+  .dashboard { min-height: 100svh; padding: 14px 20px 10px 12px; }
+  .station-heading { padding-bottom: 10px; }
+  .station-title-row { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .station-name { align-items: flex-start; flex-direction: column; gap: 3px; }
+  h1 { font-size: 20px; }
+  .eyebrow { font-size: 8px; }
+  .arrival-card { min-height: 57px; }
+  .arrival-info strong { font-size: 14px; }
+  .bottom-bar { flex-direction: column; align-items: flex-start; }
+  .controls { align-self: stretch; justify-content: flex-end; }
+  .error-note { margin-right: auto; }
+}
+@media (max-width: 600px) and (orientation: landscape) {
+  .dashboard, .dashboard * { cursor: none !important; }
+  .dashboard { padding: 8px 28px 6px 11px; }
+  .station-heading { padding: 0 0 8px; }
+  .station-title-row { gap: 8px; }
+  .station-name { min-width: 0; align-items: flex-start; flex-direction: column; gap: 3px; }
+  h1 { font-size: 22px; }
+  .bus-name h1 { font-size: 18px; }
+  .eyebrow { font-size: 9px; }
+  .mode-switch button { min-width: 58px; min-height: 34px; padding: 6px 10px; font-size: 12px; }
+  .line-key { width: 6px; height: 6px; }
+  .clock-block time { font-size: 14px; }
+  .clock-block span { font-size: 7px; }
+  .section-title { margin-bottom: 4px; font-size: 8px; }
+  .service-pill { padding: 2px 5px; font-size: 7px; }
+  .arrival-grid { gap: 5px; padding-right: 6px; }
+  .arrival-card { min-height: 60px; gap: 9px; padding: 5px 9px; }
+  .route-symbol { flex-basis: 27px; width: 27px; height: 27px; font-size: 12px; }
+  .arrival-info { gap: 2px; }
+  .arrival-info strong { font-size: 20px; line-height: 1.05; }
+  .arrival-info span { font-size: 10px; }
+  .countdown strong { font-size: 27px; }
+  .countdown span { font-size: 7px; }
+  .bottom-bar { gap: 5px; padding-top: 4px; margin-top: 5px; }
+  .update-info, .controls { gap: 4px; font-size: 8px; }
+  .update-icon { font-size: 12px; }
+  .controls input { width: 37px; padding: 2px 1px; }
+  .refresh-button { width: 21px; height: 21px; font-size: 13px; }
+}
