@@ -2,6 +2,12 @@
 
 A small, configurable arrivals display for local rail and bus stops. The React frontend is built on a development computer; one Python server handles OneBusAway requests and serves the built app on the Raspberry Pi. The landscape layout targets the Pi's 480 × 320 display and shows a large, scrollable list of upcoming arrivals.
 
+### Raspberry Pi size preview
+
+![U District light rail arrivals displayed at 480 × 320 pixels](docs/screenshots/u-district-480x320.jpg)
+
+This preview uses the southbound U District stop and real OneBusAway arrivals. The list contains more rows than fit on screen, so it can be scrolled to view later departures.
+
 ## Develop on a computer
 
 1. Put your OneBusAway key in `.env` as `API_KEY=...`.
