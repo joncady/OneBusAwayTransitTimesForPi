@@ -7,6 +7,10 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
+import sys
+import threading
 import time
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -51,10 +55,104 @@ def validate_config(config):
     return config
 
 
+def validate_display_config(config):
+    if not isinstance(config, dict):
+        raise ValueError("display config must be a JSON object")
+    timezone = config.get("timezone")
+    if not isinstance(timezone, str) or not re.match(r"^[A-Za-z0-9_+/-]+$", timezone) or ".." in timezone:
+        raise ValueError("display config timezone must be a valid IANA timezone name")
+    if not (Path("/usr/share/zoneinfo") / timezone).is_file():
+        raise ValueError("display config timezone is not available on this system: {}".format(timezone))
+    schedule = config.get("weekdaySchedule")
+    if not isinstance(schedule, dict):
+        raise ValueError("display config weekdaySchedule must be an object")
+    days = schedule.get("days")
+    if not isinstance(days, list) or not days or any(day not in ("mon", "tue", "wed", "thu", "fri", "sat", "sun") for day in days):
+        raise ValueError("display config weekdaySchedule.days must contain weekday abbreviations")
+    for field in ("start", "end"):
+        if not isinstance(schedule.get(field), str) or not re.match(r"^(?:[01]\d|2[0-3]):[0-5]\d$", schedule[field]):
+            raise ValueError("display config weekdaySchedule.{} must use HH:MM".format(field))
+    if schedule["start"] >= schedule["end"]:
+        raise ValueError("display config weekdaySchedule.start must be earlier than end")
+    for key, minimum, maximum in (
+        ("idleTimeoutSeconds", 30, 3600),
+        ("defaultRefreshSeconds", 10, 3600),
+        ("screenCheckSeconds", 5, 120),
+    ):
+        value = config.get(key)
+        if not isinstance(value, int) or isinstance(value, bool) or not minimum <= value <= maximum:
+            raise ValueError("display config {} must be an integer from {} to {}".format(key, minimum, maximum))
+    return config
+
+
 try:
     CONFIG = validate_config(json.loads((ROOT / "config" / "transit.json").read_text(encoding="utf-8")))
 except (OSError, json.JSONDecodeError, ValueError) as error:
     raise SystemExit("Invalid config/transit.json: {}".format(error))
+try:
+    DISPLAY_CONFIG = validate_display_config(json.loads((ROOT / "config" / "display.json").read_text(encoding="utf-8")))
+except (OSError, json.JSONDecodeError, ValueError) as error:
+    raise SystemExit("Invalid config/display.json: {}".format(error))
+
+os.environ["TZ"] = DISPLAY_CONFIG["timezone"]
+if hasattr(time, "tzset"):
+    time.tzset()
+
+
+def is_scheduled_active(timestamp=None):
+    parts = time.localtime(timestamp or time.time())
+    today = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")[parts.tm_wday]
+    minute = parts.tm_hour * 60 + parts.tm_min
+    start_hour, start_minute = map(int, DISPLAY_CONFIG["weekdaySchedule"]["start"].split(":"))
+    end_hour, end_minute = map(int, DISPLAY_CONFIG["weekdaySchedule"]["end"].split(":"))
+    start = start_hour * 60 + start_minute
+    end = end_hour * 60 + end_minute
+    return today in DISPLAY_CONFIG["weekdaySchedule"]["days"] and start <= minute < end
+
+
+class DisplayPowerManager(threading.Thread):
+    """Use X11 DPMS to wake during commute hours and blank after inactivity."""
+
+    def __init__(self):
+        super().__init__(name="display-power-manager", daemon=True)
+        self.stop_event = threading.Event()
+        self.last_policy = None
+        self.xset = shutil.which("xset") if sys.platform.startswith("linux") else None
+        self.x_env = os.environ.copy()
+        self.x_env["DISPLAY"] = self.x_env.get("DISPLAY") or ":0"
+        self.x_env["XAUTHORITY"] = self.x_env.get("XAUTHORITY") or str(Path.home() / ".Xauthority")
+
+    def apply_policy(self, scheduled):
+        policy = "scheduled" if scheduled else "idle"
+        if policy == self.last_policy or not self.xset:
+            return
+        if scheduled:
+            commands = (["s", "off"], ["-dpms"], ["dpms", "force", "on"])
+        else:
+            commands = (
+                ["s", "off"],
+                ["+dpms"],
+                ["dpms", "0", "0", str(DISPLAY_CONFIG["idleTimeoutSeconds"])],
+            )
+        try:
+            for args in commands:
+                subprocess.run([self.xset] + list(args), env=self.x_env, check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            self.last_policy = policy
+            print("Display power policy: {}".format(policy))
+        except (OSError, subprocess.CalledProcessError) as error:
+            detail = getattr(error, "stderr", b"")
+            if isinstance(detail, bytes):
+                detail = detail.decode("utf-8", "replace").strip()
+            print("Display power settings not ready yet: {}".format(detail or error))
+
+    def run(self):
+        while not self.stop_event.is_set():
+            self.apply_policy(is_scheduled_active())
+            self.stop_event.wait(DISPLAY_CONFIG["screenCheckSeconds"])
+
+    def stop(self):
+        self.stop_event.set()
 
 
 def read_env_values():
@@ -118,6 +216,7 @@ class DisplayHandler(SimpleHTTPRequestHandler):
             self.send_json(200, {
                 "arrivalWindowMinutes": CONFIG["arrivalWindowMinutes"],
                 "modes": public_modes,
+                "display": DISPLAY_CONFIG,
             })
             return
         if parsed.path == "/api/arrivals":
@@ -167,10 +266,13 @@ class DisplayHandler(SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "4173"))
     server = ThreadingHTTPServer(("0.0.0.0", port), DisplayHandler)
+    power_manager = DisplayPowerManager()
+    power_manager.start()
     print("Train times available on port {}".format(port))
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        power_manager.stop()
         server.server_close()

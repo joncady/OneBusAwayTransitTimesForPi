@@ -120,7 +120,7 @@ ssh -M -N -f \
   "$TARGET" || die "Could not authenticate to $TARGET. Check the username, password, or SSH key."
 
 printf 'Copying the build and server files…\n'
-tar -czf - -C "$ROOT_DIR" dist server.py requirements.txt config -C "$ROOT_DIR/pi" start-kiosk.sh disable-screen-blanking.sh |
+tar -czf - -C "$ROOT_DIR" dist server.py requirements.txt config -C "$ROOT_DIR/pi" start-kiosk.sh |
   ssh -S "$CONTROL_PATH" "$TARGET" \
     "mkdir -p '$PI_DIR' && rm -rf '$PI_DIR/.deploy-staging' && mkdir -p '$PI_DIR/.deploy-staging' && tar -xzf - -C '$PI_DIR/.deploy-staging'" \
     || die "Could not copy deployment files to the Pi."
@@ -141,8 +141,7 @@ cp "$STAGING/requirements.txt" "$APP_DIR/requirements.txt"
 rm -rf "$APP_DIR/config"
 mv "$STAGING/config" "$APP_DIR/config"
 cp "$STAGING/start-kiosk.sh" "$APP_DIR/start-kiosk.sh"
-cp "$STAGING/disable-screen-blanking.sh" "$APP_DIR/disable-screen-blanking.sh"
-chmod +x "$APP_DIR/start-kiosk.sh" "$APP_DIR/disable-screen-blanking.sh"
+chmod +x "$APP_DIR/start-kiosk.sh"
 rm -rf "$STAGING"
 
 APP_DIR="$APP_DIR" python3 - <<'PY'
@@ -164,7 +163,6 @@ managed = (
 )
 lines = [line for line in lines if not any(item in line for item in managed)]
 lines.extend((
-    "@{}/disable-screen-blanking.sh".format(app_dir),
     "@python3 {}/server.py".format(app_dir),
     "@{}/start-kiosk.sh".format(app_dir),
 ))

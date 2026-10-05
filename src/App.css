@@ -20,6 +20,7 @@ h1 span { color: #92999c; font-weight: 400; }
 .section-title { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; color: #c2c8ca; font-size: 9px; }
 .service-pill { padding: 3px 6px; border: 1px solid #343b34; border-radius: 99px; color: #72d463; font-size: 8px; letter-spacing: .03em; }
 .service-pill.service-error { border-color: #663c31; color: #ff9277; }
+.service-pill.service-paused { border-color: #454a4c; color: #a5adaf; }
 .arrival-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y; scrollbar-width: thin; scrollbar-color: #62717a #191c1f; outline: none; }
 .arrival-scroll::-webkit-scrollbar { width: 8px; }
 .arrival-scroll::-webkit-scrollbar-track { border-radius: 5px; background: #191c1f; }

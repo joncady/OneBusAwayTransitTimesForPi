@@ -1,0 +1,11 @@
+{
+  "timezone": "America/Los_Angeles",
+  "weekdaySchedule": {
+    "days": ["mon", "tue", "wed", "thu", "fri"],
+    "start": "07:00",
+    "end": "08:00"
+  },
+  "idleTimeoutSeconds": 300,
+  "defaultRefreshSeconds": 60,
+  "screenCheckSeconds": 15
+}

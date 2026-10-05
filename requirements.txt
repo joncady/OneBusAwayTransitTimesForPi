@@ -1,3 +1,4 @@
 # OneBusAway 1.2.4 is the newest official SDK release compatible with Python 3.7.
 onebusaway==1.2.4
 pydantic<2
+httpx<0.28

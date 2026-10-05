@@ -15,6 +15,28 @@ type Mode = 'train' | 'bus'
 type TransitConfig = {
   arrivalWindowMinutes: number
   modes: Record<Mode, { name: string; serviceLabel: string; plural: string }>
+  display: {
+    timezone: string
+    weekdaySchedule: { days: string[]; start: string; end: string }
+    idleTimeoutSeconds: number
+    defaultRefreshSeconds: number
+  }
+}
+
+function isWithinSchedule(date: Date, display: TransitConfig['display']) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: display.timezone,
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]))
+  const day = values.weekday.toLowerCase()
+  const minutes = Number(values.hour) * 60 + Number(values.minute)
+  const start = Number(display.weekdaySchedule.start.slice(0, 2)) * 60 + Number(display.weekdaySchedule.start.slice(3))
+  const end = Number(display.weekdaySchedule.end.slice(0, 2)) * 60 + Number(display.weekdaySchedule.end.slice(3))
+  return display.weekdaySchedule.days.includes(day) && minutes >= start && minutes < end
 }
 
 function getSavedRefreshRate() {
@@ -29,6 +51,7 @@ function App() {
   const [transitConfig, setTransitConfig] = useState<TransitConfig | null>(null)
   const [lastUpdated, setLastUpdated] = useState<number | null>(null)
   const [now, setNow] = useState(Date.now())
+  const [lastActivityAt, setLastActivityAt] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -60,6 +83,9 @@ function App() {
         const data = await response.json()
         if (!response.ok) throw new Error(data.error || 'Unable to load transit settings.')
         setTransitConfig(data)
+        if (window.localStorage.getItem('train-times-refresh-seconds') === null) {
+          setRefreshSeconds(data.display.defaultRefreshSeconds)
+        }
       })
       .catch((cause) => {
         if (cause instanceof Error && cause.name !== 'AbortError') {
@@ -71,14 +97,34 @@ function App() {
   }, [])
 
   useEffect(() => {
+    const recordActivity = () => setLastActivityAt(Date.now())
+    window.addEventListener('pointerdown', recordActivity, { passive: true })
+    window.addEventListener('keydown', recordActivity)
+    return () => {
+      window.removeEventListener('pointerdown', recordActivity)
+      window.removeEventListener('keydown', recordActivity)
+    }
+  }, [])
+
+  const isScheduledActive = transitConfig ? isWithinSchedule(new Date(now), transitConfig.display) : false
+  const recentlyTouched = lastActivityAt !== null
+    && now - lastActivityAt < (transitConfig?.display.idleTimeoutSeconds ?? 0) * 1000
+  const isActive = isScheduledActive || recentlyTouched
+
+  useEffect(() => {
+    if (!isActive) {
+      setIsLoading(false)
+      return
+    }
     const controller = new AbortController()
+    setIsLoading(true)
     void refreshArrivals(controller.signal)
     const timer = window.setInterval(() => void refreshArrivals(controller.signal), refreshSeconds * 1000)
     return () => {
       controller.abort()
       window.clearInterval(timer)
     }
-  }, [refreshArrivals, refreshSeconds])
+  }, [refreshArrivals, refreshSeconds, isActive])
 
   function updateRefreshRate(value: number) {
     const next = Math.min(3600, Math.max(10, value || 10))
@@ -123,11 +169,12 @@ function App() {
       </section>
 
       <section className="arrivals-section" aria-label={`Upcoming ${mode} arrivals`}>
-        <div className="section-title"><span>UPCOMING {mode === 'bus' ? 'BUSES' : 'TRAINS'}</span><span className={`service-pill ${error ? 'service-error' : ''}`}>● &nbsp; {error ? 'NO DATA' : 'LIVE'}</span></div>
+        <div className="section-title"><span>UPCOMING {mode === 'bus' ? 'BUSES' : 'TRAINS'}</span><span className={`service-pill ${error ? 'service-error' : !isActive ? 'service-paused' : ''}`}>● &nbsp; {error ? 'NO DATA' : isActive ? 'LIVE' : 'PAUSED'}</span></div>
         <div className="arrival-scroll" role="region" aria-label={`${mode === 'bus' ? 'Bus' : 'Train'} arrivals, scroll for more`} tabIndex={0}>
           <div className="arrival-grid" aria-live="polite">
             {isLoading && arrivals.length === 0 && <div className="empty-state">Checking upcoming {mode === 'bus' ? 'buses' : 'trains'}…</div>}
-            {!isLoading && arrivals.length === 0 && !error && <div className="empty-state">No {activeMode.plural} expected in the next {transitConfig.arrivalWindowMinutes} minutes.</div>}
+            {!isActive && arrivals.length === 0 && <div className="empty-state">Touch the screen to check upcoming {activeMode.plural}.</div>}
+            {isActive && !isLoading && arrivals.length === 0 && !error && <div className="empty-state">No {activeMode.plural} expected in the next {transitConfig.arrivalWindowMinutes} minutes.</div>}
             {error && arrivals.length === 0 && <div className="empty-state error-message">{error}</div>}
             {arrivals.map((arrival) => {
               const minutesUntil = Math.max(0, Math.ceil((arrival.timestamp - now) / 60000))
@@ -153,7 +200,7 @@ function App() {
           <label htmlFor="refresh-rate">Refresh every</label>
           <input id="refresh-rate" aria-label="Refresh interval in seconds" type="number" min="10" max="3600" step="5" value={refreshSeconds} onChange={(event) => updateRefreshRate(Number(event.target.value))} />
           <span>sec</span>
-          <button className="refresh-button" onClick={() => void refreshArrivals()} aria-label="Refresh arrivals">↻</button>
+          <button className="refresh-button" onClick={() => setLastActivityAt(Date.now())} aria-label="Refresh arrivals">↻</button>
         </div>
       </footer>
     </main>

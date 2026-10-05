@@ -1,5 +1,4 @@
 @lxpanel --profile LXDE-pi
 @pcmanfm --desktop --profile LXDE-pi
-@/home/pi/sound-transit-display/disable-screen-blanking.sh
 @python3 /home/pi/sound-transit-display/server.py
 @/home/pi/sound-transit-display/start-kiosk.sh
