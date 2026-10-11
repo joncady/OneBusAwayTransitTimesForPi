@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 
 type Arrival = {
@@ -54,17 +54,24 @@ function App() {
   const [lastActivityAt, setLastActivityAt] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  const arrivalsController = useRef<AbortController | null>(null)
 
-  const refreshArrivals = useCallback(async (signal?: AbortSignal) => {
+  const refreshArrivals = useCallback(async () => {
+    arrivalsController.current?.abort()
+    const controller = new AbortController()
+    arrivalsController.current = controller
+    const { signal } = controller
+    setIsLoading(true)
     try {
       const response = await fetch(`/api/arrivals?mode=${mode}`, { signal, cache: 'no-store' })
       const data = await response.json()
+      if (signal.aborted) return
       if (!response.ok) throw new Error(data.error || 'Unable to load arrivals.')
       setArrivals(data.arrivals)
       setLastUpdated(data.updatedAt)
       setError('')
     } catch (cause) {
-      if (cause instanceof Error && cause.name === 'AbortError') return
+      if (signal.aborted || (cause instanceof Error && cause.name === 'AbortError')) return
       setError(cause instanceof Error ? cause.message : 'Unable to load arrivals.')
     } finally {
       if (!signal?.aborted) setIsLoading(false)
@@ -78,22 +85,30 @@ function App() {
 
   useEffect(() => {
     const controller = new AbortController()
-    void fetch('/api/config', { signal: controller.signal, cache: 'no-store' })
-      .then(async (response) => {
+    let retryTimer: number | undefined
+    const loadConfig = async () => {
+      try {
+        const response = await fetch('/api/config', { signal: controller.signal, cache: 'no-store' })
         const data = await response.json()
+        if (controller.signal.aborted) return
         if (!response.ok) throw new Error(data.error || 'Unable to load transit settings.')
         setTransitConfig(data)
+        setError('')
         if (window.localStorage.getItem('train-times-refresh-seconds') === null) {
           setRefreshSeconds(data.display.defaultRefreshSeconds)
         }
-      })
-      .catch((cause) => {
-        if (cause instanceof Error && cause.name !== 'AbortError') {
-          setError(cause.message)
-          setIsLoading(false)
-        }
-      })
-    return () => controller.abort()
+      } catch (cause) {
+        if (controller.signal.aborted) return
+        setError(cause instanceof Error ? cause.message : 'Unable to load transit settings.')
+        setIsLoading(false)
+        retryTimer = window.setTimeout(() => void loadConfig(), 10000)
+      }
+    }
+    void loadConfig()
+    return () => {
+      controller.abort()
+      window.clearTimeout(retryTimer)
+    }
   }, [])
 
   useEffect(() => {
@@ -116,12 +131,10 @@ function App() {
       setIsLoading(false)
       return
     }
-    const controller = new AbortController()
-    setIsLoading(true)
-    void refreshArrivals(controller.signal)
-    const timer = window.setInterval(() => void refreshArrivals(controller.signal), refreshSeconds * 1000)
+    void refreshArrivals()
+    const timer = window.setInterval(() => void refreshArrivals(), refreshSeconds * 1000)
     return () => {
-      controller.abort()
+      arrivalsController.current?.abort()
       window.clearInterval(timer)
     }
   }, [refreshArrivals, refreshSeconds, isActive])
@@ -200,7 +213,10 @@ function App() {
           <label htmlFor="refresh-rate">Refresh every</label>
           <input id="refresh-rate" aria-label="Refresh interval in seconds" type="number" min="10" max="3600" step="5" value={refreshSeconds} onChange={(event) => updateRefreshRate(Number(event.target.value))} />
           <span>sec</span>
-          <button className="refresh-button" onClick={() => setLastActivityAt(Date.now())} aria-label="Refresh arrivals">↻</button>
+          <button className="refresh-button" onClick={() => {
+            setLastActivityAt(Date.now())
+            if (isActive) void refreshArrivals()
+          }} aria-label="Refresh arrivals">↻</button>
         </div>
       </footer>
     </main>
