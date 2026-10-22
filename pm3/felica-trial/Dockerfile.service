@@ -1,0 +1,2 @@
+FROM pm3-felica-build
+RUN apt-get update && apt-get install -y --no-install-recommends binutils-arm-linux-gnueabi && rm -rf /var/lib/apt/lists/*

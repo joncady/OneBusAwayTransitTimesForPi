@@ -11,6 +11,12 @@ node_modules
 dist
 dist-ssr
 *.local
+*.local.json
+*.local.bin
+*.local.txt
+*.previous
+.venv/
+.venv-media/
 __pycache__/
 *.py[cod]
 .env

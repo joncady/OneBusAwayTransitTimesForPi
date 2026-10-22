@@ -1,0 +1,11 @@
+{
+  "albums": {
+    "<saved card label>": "/init/efad/mp_sd/transit-media/albums/<release>/<album folder>"
+  },
+  "soundFile": "/init/transit-prototype/sounds/success.wav",
+  "soundEnabled": false,
+  "slideSeconds": 5,
+  "sessionSeconds": 60,
+  "soundTimeoutSeconds": 3,
+  "enableAmplifier": false
+}

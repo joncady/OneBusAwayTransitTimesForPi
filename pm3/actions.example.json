@@ -1,0 +1,10 @@
+{
+  "triggerCard": "<saved card label>",
+  "photoDirectory": "/init/efad/mp_sd/transit-media/photos",
+  "soundFile": "/init/transit-prototype/sounds/success.wav",
+  "soundEnabled": false,
+  "slideSeconds": 5,
+  "sessionSeconds": 60,
+  "soundTimeoutSeconds": 3,
+  "enableAmplifier": false
+}

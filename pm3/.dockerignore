@@ -1,0 +1,8 @@
+target/
+*.local
+*.local.*
+**/*.local
+**/*.local.*
+**/*.previous
+**/*.log
+**/__pycache__/

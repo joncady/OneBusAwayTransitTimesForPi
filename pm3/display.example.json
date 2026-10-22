@@ -1,0 +1,10 @@
+{
+  "mode": "train",
+  "timezone": "America/Los_Angeles",
+  "refreshSeconds": 60,
+  "pageSeconds": 10,
+  "staleAfterSeconds": 180,
+  "maxCacheAgeSeconds": 900,
+  "maxBackoffSeconds": 300,
+  "baseUrl": "https://api.pugetsound.onebusaway.org/api/where"
+}

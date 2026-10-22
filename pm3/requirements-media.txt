@@ -1,0 +1,2 @@
+# Development machine only; not installed on the PM3.
+Pillow>=10,<13

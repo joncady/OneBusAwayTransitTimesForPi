@@ -1,46 +1,151 @@
-# Sound Transit Train Times
+# Transit Times for Pi & PROXmobil3
 
-A small, configurable arrivals display for local rail and bus stops. The React frontend is built on a development computer; one Python server handles OneBusAway requests and serves the built app on the Raspberry Pi. The landscape layout targets the Pi's 480 × 320 display and shows a large, scrollable list of upcoming arrivals.
+Live rail and bus arrivals from OneBusAway, with card-triggered photo albums on
+an upcycled PROXmobil3 transit terminal. The original Raspberry Pi browser kiosk
+is also included.
 
-### Raspberry Pi size preview
+## Demo
 
-![U District light rail arrivals displayed at 480 × 320 pixels](docs/screenshots/u-district-480x320.jpg)
+[![U District arrivals switching to photo albums on a PROXmobil3](docs/media/pm3-demo.gif)](docs/media/pm3-demo.mp4)
 
-This preview uses the southbound U District stop and real OneBusAway arrivals. The list contains more rows than fit on screen, so it can be scrolled to view later departures.
+[Watch the nine-second demo (MP4)](docs/media/pm3-demo.mp4).
+The recording shows U District Station arrivals and different cards selecting
+photo albums. The shared copies are silent, omit recording/location metadata,
+and obscure only printed ORCA card numbers. The original recording stays outside
+this repository. The clip shows album selection; the configured return to arrivals
+happens after the recording ends.
 
-## Develop on a computer
+## Choose a platform
 
-1. Put your OneBusAway key in `.env` as `API_KEY=...`.
-2. Start the Python API in one terminal with `npm run dev:api` (Python dependencies from `requirements.txt` must be installed).
-3. Start the frontend in another terminal with `npm run dev`.
+| | PROXmobil3 | Raspberry Pi |
+| --- | --- | --- |
+| App | Native Rust + Slint | React/Vite + Python API server |
+| Display | 800 × 480 framebuffer; central 754 pixels visible | 480 × 320 HDMI touchscreen |
+| Arrivals | OneBusAway, automatic paging | OneBusAway SDK, scrollable list |
+| Photo albums | Per-card albums on USB | Not implemented |
+| Settings | Private JSON; restart to apply | JSON schedule and on-screen refresh input |
+| Runtime | Static native app and installed curl | Python and Chromium; Node only for frontend builds |
+| Guide | [PM3 setup](pm3/README.md) | [Pi setup](pi/README.md) |
 
-Vite forwards `/api` requests to the Python server, so development and production use the same OneBusAway SDK implementation.
+## PM3: current behavior
 
-## Private transit configuration
+- Live arrivals while idle, with configurable polling, paging, cache expiry and
+  network-error backoff. Network requests run separately from rendering/card input.
+- Tap an enrolled card to select its USB photo album. Unconfigured cards do not
+  select an album. A configured card can switch to another album after the tap
+  cooldown. The display returns to arrivals when the photo session ends.
+- Arrange photos on your computer, then sync resized copies to the USB drive.
+  Original photos stay on your computer; no photo server or extra Pi is required.
+- Audio is disabled by default. Known cards use private, salted local fingerprints;
+  the app does not perform fare transactions or infer the issuing agency.
 
-The real `config/transit.json` is ignored by Git because it contains location-specific station and stop information. Create it from `config/transit.example.json`, then replace placeholders such as `<station name>`, `<service label>`, `<bus stop name>`, `<bus route label>`, and the stop ID placeholders with your own values. Keep this private config and `.env` on the development computer and Pi only.
+**Deployment is currently a bounded prototype session**, normally one hour.
+Permanent startup, full OS recovery images and PM3 power scheduling remain pending.
+The Pi schedule does not apply to the PM3.
 
-The Python server provides display settings from this private config to the frontend. The JSON structure is validated when the server starts. Add modes with stop IDs, then add matching frontend presentation if the new mode needs different treatment.
+| Pending capability | Status |
+| --- | --- |
+| Japanese FeliCa cards | Paused pending a compatible discovery interface; [backlog issue #2](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/2) |
+| Audio | Muted; amplifier pop unresolved |
+| QR scanner | Deferred after an unsuccessful trial; not integrated |
+| Touch input | No usable controller exposed on the inspected PM3 |
 
-## Display schedule and idle behavior
+## Private configuration
 
-Adjust the tracked `config/display.json` to change the timezone, weekday active hours, idle timeout, default refresh interval, or screen policy check interval. The default keeps the display and arrivals polling active Monday through Friday from 7:00 to 8:00 AM. Outside those hours, a touchscreen tap wakes the display and resumes polling for five minutes after the last interaction. The refresh-rate control remains available on screen.
+For a fresh checkout:
 
-## Run the production build
+```sh
+cp .env.example .env
+cp config/transit.example.json config/transit.json
+```
 
-1. Run `npm run build` on the development computer.
-2. Make sure the Pi has Python 3.7 or later and a `.env` file containing `API_KEY=...`.
-3. Copy this folder's `dist/`, `server.py`, `requirements.txt`, and your private `config/transit.json` to the Pi. The deploy script includes the private config automatically.
-4. Install the server dependency with `python3 -m pip install --user -r requirements.txt`.
-5. From that folder on the Pi, run `python3 server.py`.
-6. Open `http://localhost:4173` in Chromium.
+Keep existing private files if you have already configured the app. Put your
+OneBusAway key in `.env` as `API_KEY=...`. `PI_PASSWORD` is used only by the Pi's
+password-based deployment script; PM3 deployment uses your SSH key.
 
-For Raspberry Pi OS (Legacy) with the LXDE desktop, `pi/lxsession-autostart` preserves the stock panel and starts the server and kiosk browser after desktop login. The server applies the configured X11 display power policy. The deploy script installs the autostart settings automatically. For manual setup, copy the autostart file to `/home/pi/.config/lxsession/LXDE-pi/autostart` and `pi/start-kiosk.sh` to `/home/pi/sound-transit-display/`, then make the kiosk script executable. This setup starts after desktop login; enable desktop auto-login in Raspberry Pi Configuration if it is not already enabled. The kiosk launcher adds `?kiosk=1` to hide the pointer over the app.
+Replace the station names, service labels and plain stop IDs in every configured
+mode. PM3 can omit unused modes; its default selected mode is `train`. The Pi UI
+provides train/bus controls. The shared examples use placeholders so they do not
+publish a personal location.
 
-The Pi does not need Node.js or npm to serve the production app. The OneBusAway Python SDK is pinned to version 1.2.4, which supports the Pi's current Python 3.7 runtime. The API key is read from `.env` and stop IDs from the private transit config; neither is sent to the browser. Display settings are returned by the server's config endpoint.
+Both implementations validate transit configuration on load. The PM3 also rejects
+unknown fields and checks configuration bounds. Do not commit `.env`, the real
+`config/transit.json`, card registries, private album maps, logs or discovery captures.
+See [configuration examples](config/transit.example.json) and
+[PM3 display settings](pm3/display.example.json).
 
-## Deploy to the Raspberry Pi
+## PM3 quick start
 
-Run `./pi/deploy.sh` from this project folder. The script builds the frontend, looks for `raspberrypi.local` or a Raspberry Pi address in the local ARP table, uses `PI_PASSWORD` from the local `.env` for non-interactive SSH, installs the Python SDK, copies the app without replacing the Pi's `.env`, updates desktop auto-start, and restarts the server and kiosk. The Pi and computer need to be on the same network, and SSH must be enabled on the Pi. Add `PI_PASSWORD=your_pi_ssh_password` to your local `.env`; do not commit `.env`.
+On the development computer you need Docker running, Python 3 and SSH. The PM3
+needs working Ethernet, key-based SSH and its existing USB bootstrap. These
+scripts preserve that bootstrap; they do not set up SSH or install a boot service.
+Start with the [community SSH instructions](https://wiki.pm3.dev/ssh) if necessary.
 
-If discovery cannot find it, enter the Pi's hostname or IP when prompted. You can also set `PI_HOST`, `PI_USER`, or `PI_DIR` before running the script, for example `PI_HOST=192.168.0.49 ./pi/deploy.sh`. The defaults are user `pi` and `/home/pi/sound-transit-display`.
+Run from the repository root, replacing the SSH destination:
+
+```sh
+PM3_TARGET='root@device-host'
+ssh -o BatchMode=yes "$PM3_TARGET" 'uname -m'
+./pm3/deploy-live.sh "$PM3_TARGET" 3600
+```
+
+The script cross-compiles, validates incoming configuration and starts a one-hour
+live session. It reuses private `config/transit.json`; editing ignored
+`pm3/runtime.local/display.json` changes polling/mode/paging on the next deployment.
+A device-only station change is overwritten by the next deployment's local config.
+
+For an already deployed app:
+
+```sh
+# Start another one-hour live session, including after the old unit expires.
+ssh "$PM3_TARGET" '/init/transit-prototype/restart-display.sh 3600 live'
+
+# Stop gracefully.
+ssh "$PM3_TARGET" 'systemctl stop transit-prototype.service'
+```
+
+Build only with `./pm3/build.sh`. Existing tests are opt-in with `--test`.
+For sample mode, card enrollment/naming, albums and recovery, follow the
+[complete PM3 process](pm3/README.md).
+
+## Card albums
+
+1. Deploy the PM3 app and enroll/name cards one at a time, checking a repeated tap
+   after removing the card for two seconds.
+2. Create a private action file from [albums.example.json](pm3/albums.example.json).
+3. Create `~/Desktop/Transit Albums/<saved card label>/` folders and add photos.
+4. Install the development-machine media dependency and sync:
+
+```sh
+python3 -m venv .venv-media
+.venv-media/bin/python -m pip install -r pm3/requirements-media.txt
+.venv-media/bin/python pm3/sync-albums.py "$PM3_TARGET"
+```
+
+Folder names must match enrolled labels. JPEG, PNG, HEIC/HEIF and WebP inputs are
+prepared as resized, oriented JPEG copies; HEIC conversion uses macOS `sips`.
+The tool strips EXIF/location metadata, keeps previous USB releases, updates the
+private album map and starts another one-hour live session. It currently supports
+up to 32 mapped albums and 512 photos per album. Do not remove USB bootstrap files.
+
+See [album setup and controls](pm3/README.md#arrange-albums-on-your-development-computer)
+for the initial action-file command, preparation-only mode and timing settings.
+
+## Raspberry Pi version
+
+![Pi layout at 480 × 320](docs/screenshots/u-district-480x320.jpg)
+
+The Pi version uses the official OneBusAway Python SDK and Chromium. Its default
+schedule is 7–8 AM Monday–Friday, with touch wake and five minutes of activity
+outside scheduled hours. Refresh rate is editable on screen.
+
+For local development, frontend builds and one-command deployment, see
+[the Pi guide](pi/README.md). The production Pi does not need Node.js.
+
+## References and backlog
+
+- [Hardware, API, toolkit and related-project references](pm3/REFERENCES.md)
+- [PM3 source layout, privacy and recovery handoff](docs/pm3-repository-handoff.md)
+- [Hardware/software audit](docs/pm3-audit-2026-10-21.md)
+- [Japanese-card research and resume criteria](docs/pm3-felica-parallel-research.md)
+- [Project backlog](BACKLOG.md) · [GitHub issues](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues)
