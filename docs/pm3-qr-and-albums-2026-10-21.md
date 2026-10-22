@@ -25,3 +25,11 @@ The native media loader now supports the per-card `albums` map while retaining t
 The ARM build succeeded with unrelated unit tests skipped. The backward-compatible album-capable app was deployed after recovery, with the prior single-card configuration preserved. The service is active and authenticated live arrivals refreshed successfully. Scanner control stayed at 0.
 
 One new generic alias was recorded after reboot. The user confirmed it was an additional ORCA card and supplied its private name; this does not demonstrate identity drift in an earlier card. The new alias was named privately and its Desktop album folder added. Card identity stability across a reader power cycle still must not be assumed from earlier repeat-tap results alone.
+
+## Follow-up validation — 2026-10-22: successful decode
+
+With the user reporting that the scanner light was already on, a passive UART trial at 115200 8N1 decoded the exact generated payload `PM3-QR-CHECK` presented on the user's phone. The user heard no beep. This confirms the built-in scanner can read a QR code and deliver its contents to the host; audible feedback is not required for a successful scan.
+
+No scanner power/trigger commands were sent. The reported `barcode` control value remained 0 throughout, so that value should not be treated as proof that the scanner is unpowered. The temporary serial reader closed after the match. SSH remained responsive, uptime continued without a reboot, and `transit-prototype` remained active. Arbitrary scan contents were not printed and the temporary capture was deleted.
+
+Restoring the saved UART settings reported that not all requested operations could be performed. A subsequent status read showed 9600 baud and canonical/echo settings, with another ioctl warning. Exact restoration is therefore unconfirmed; the successful scan itself used 115200 raw mode. A future scanner integration should explicitly configure the port on open and handle these driver quirks. QR events are not yet integrated into the slideshow application.

@@ -69,3 +69,19 @@ The action returned to departures after its session, as recorded in the log. The
 4. Add live OneBusAway requests, validated private configuration, stale/offline/error states, and configurable refresh/schedule to the native app.
 5. Test LCD/backlight off/on and choose a wake policy. Ethernet is accepted; Wi-Fi is not required.
 6. Install a persistent service and repeatable deployment/rollback once the prototype is validated. Keep a recovery route and account for both watchdog mechanisms.
+
+## Reader illumination follow-up — 2026-10-22
+
+The user observed slight pulsation during a bounded trial of the documented
+cVEND LED masks 64 and 128. The normal app now enables the first light while
+card polling is ready, changes to the second for one second after successful
+card recognition, then returns to ready. The user verified the deployed result:
+the light moves from left to right and provides sufficient tap confirmation;
+the configured album opens and the ready indication returns. No color is assumed.
+
+The ARM release build succeeded. The saved pre-demo transit and display files
+were restored on the device and privately compared byte-for-byte with their
+backups; authenticated arrivals refreshed. Audio remains disabled, with amplifier
+state 0. This session runs for 24 hours; permanent boot startup remains pending.
+LEDs switch off on graceful exit. No firmware, scanner power or security settings
+were changed.

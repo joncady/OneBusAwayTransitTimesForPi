@@ -115,6 +115,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
     let mut seconds = 600u64;
     let mut probe = false;
+    let mut reader_lights = false;
+    let mut ready_light_mask = 0x40u32;
+    let mut tap_light_mask = 0x80u32;
+    let mut tap_light_ms = 1000u64;
     let mut enable_cards = false;
     let mut serial = "/dev/ttymxc3".to_string();
     let mut font = "/usr/lib/fonts/DejaVuSans.ttf".to_string();
@@ -142,6 +146,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             "--font" => {
                 i += 1;
                 font = args.get(i).ok_or("missing font path")?.clone();
+            }
+            "--reader-lights" => reader_lights = true,
+            "--ready-light-mask" | "--tap-light-mask" | "--tap-light-ms" => {
+                let option = args[i].clone();
+                i += 1;
+                let value = args.get(i).ok_or("missing light value")?;
+                match option.as_str() {
+                    "--ready-light-mask" => ready_light_mask = value.parse()?,
+                    "--tap-light-mask" => tap_light_mask = value.parse()?,
+                    _ => tap_light_ms = value.parse()?,
+                }
             }
             "--probe-reader" => probe = true,
             "--enable-card-detection" => enable_cards = true,
@@ -189,7 +204,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             "--help" => {
                 println!(
-                    "pm3-transit-prototype [--seconds 600] [--probe-reader] [--enable-card-detection] [--reader PATH] [--font PATH] [--cards-file PATH] [--actions-file PATH] [--transit-file PATH --display-file PATH --env-file PATH] [--check-config] [--list-cards | --name-card OLD NEW]\nPrivate diagnostics: [--reader-info-file PATH] [--felica-trial-file NEW_PRIVATE_PATH]"
+                    "pm3-transit-prototype [--seconds 600] [--probe-reader] [--enable-card-detection] [--reader PATH] [--font PATH] [--cards-file PATH] [--actions-file PATH] [--transit-file PATH --display-file PATH --env-file PATH] [--check-config] [--reader-lights] [--ready-light-mask 64] [--tap-light-mask 128] [--tap-light-ms 1000] [--list-cards | --name-card OLD NEW]\nPrivate diagnostics: [--reader-info-file PATH] [--felica-trial-file NEW_PRIVATE_PATH]"
                 );
                 return Ok(());
             }
@@ -199,6 +214,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     if seconds == 0 || seconds > 86400 {
         return Err("seconds must be between 1 and 86400".into());
+    }
+    if !matches!(ready_light_mask, 0 | 64 | 128 | 192)
+        || !matches!(tap_light_mask, 0 | 64 | 128 | 192)
+        || !(100..=5000).contains(&tap_light_ms)
+    {
+        return Err("light masks must be 0, 64, 128 or 192; tap duration must be 100..5000 ms".into());
     }
     let mut registry = cards_path.map(cards::Registry::open).transpose()?;
     if list_cards || name_card.is_some() {
@@ -288,6 +309,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut render_count = 0u64;
     let mut render_time = Duration::ZERO;
     let mut last_card = None::<Instant>;
+    let mut tap_light_until = None::<Instant>;
+    let mut current_light = None::<u32>;
     let mut last_uid = None::<Vec<u8>>;
     let mut last_card_label = "Card".to_string();
     let mut released_sessions = 0u64;
@@ -310,6 +333,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     0x0f if enable_cards => {
                         connected = true;
                         polling_ready = false;
+                        current_light = None;
+                        tap_light_until = None;
                         if let Some(capture) = felica_capture.as_mut() {
                             capture.ready = false;
                         }
@@ -396,6 +421,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 (Some(registry), Some(uid)) => match registry.recognize(uid) {
                                     Ok((label, _private_token, enrolled)) => {
                                         println!("Card label: {label}, newly_enrolled={enrolled}");
+                                        tap_light_until = Some(
+                                            Instant::now() + Duration::from_millis(tap_light_ms),
+                                        );
                                         if let Some(media) = media.as_mut() {
                                             media.tap(&label);
                                         }
@@ -413,6 +441,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                                         Ok((label, _private_token, enrolled)) => {
                                             println!(
                                                 "Experimental card label: {label}, newly_enrolled={enrolled}"
+                                            );
+                                            tap_light_until = Some(
+                                                Instant::now() + Duration::from_millis(tap_light_ms),
                                             );
                                             if let Some(media) = media.as_mut() {
                                                 media.tap(&label);
@@ -442,6 +473,23 @@ fn main() -> Result<(), Box<dyn Error>> {
                         released_sessions += 1;
                     }
                     _ => {}
+                }
+            }
+            if reader_lights && enable_cards {
+                let mask = if !connected || !polling_ready {
+                    0
+                } else if tap_light_until.is_some_and(|until| Instant::now() < until) {
+                    tap_light_mask
+                } else {
+                    ready_light_mask
+                };
+                if current_light != Some(mask) {
+                    if let Err(error) = port.set_leds(mask) {
+                        eprintln!("Reader lights disabled after UART error: {error}");
+                        reader_lights = false;
+                    } else {
+                        current_light = Some(mask);
+                    }
                 }
             }
             if last_ping.elapsed() >= Duration::from_secs(5) {

@@ -92,3 +92,14 @@ Tracked on GitHub: [issue #2](https://github.com/joncady/OneBusAwayTransitTimesF
 - Concrete vendor leads: compatible authorized CLRDemo discovery sample or a FeliCa-capable TCA. Inquiry updated, not sent. Resume on a verified compatible host interface or authorized deployment path; no more physical taps requested yet.
 - External fallback: supported Sony USB reader on the spare Pi using nfcpy, or a separately validated Rust/libusb helper on PM3. No purchase or integration performed.
 - Details, source files and resume criteria: [parallel research](docs/pm3-felica-parallel-research.md). No device changes or tests in this research pass.
+
+### Stretch goal: QR-triggered transit photo albums and printable card labels
+
+**Status:** planned. The built-in scanner decoded a known QR from a phone on 2026-10-22 without a beep; live arrivals remained active. See [scanner validation](docs/pm3-qr-and-albums-2026-10-21.md). This supersedes the earlier deferred/unconfirmed QR status above. QR events are not yet wired into the application.
+
+- Allow each album to have a configurable QR trigger alongside its NFC card mapping. Scanning opens the same slideshow and returns to arrivals under the existing duration/cooldown rules. This can provide an album trigger for cards whose NFC technology is not supported.
+- Generate QR images and printable label sheets on the development computer. Use opaque album tokens rather than personal names, card identifiers, local paths or credentials in the QR payload. Resolve tokens through private configuration; never execute commands or open arbitrary scanned URLs.
+- Support phone-displayed codes first, then adhesive labels small enough to attach to transit cards. Include a short optional human-readable label and preserve the QR quiet zone and contrast. Validate physical label size, scanning distance and placement before selecting a small label printer or buying supplies; no printer purchase is required for the prototype.
+- Integrate bounded serial reads, repeated-scan cooldown, safe handling of unknown codes, and port reconnect/recovery while keeping NFC, arrivals and photo playback responsive. Configure UART settings explicitly and address the restoration/ioctl warnings observed during the successful trial.
+
+**Checkpoints:** (1) one configured QR opens an existing USB album; (2) multiple QR codes select distinct albums and unknown codes are ignored safely; (3) a printed sticker scans reliably on a card; (4) document generation, optional printer workflow and reboot/reconnect behavior. Keep audio disabled unless separately revisited.

@@ -188,3 +188,20 @@ The actual reader enumerates no touch controller. Dedicated touchscreen drivers 
 Transport framing and card-event message types follow the community [cVEND protocol notes](https://wiki.pm3.dev/cvend). Broader card recognition validation, screen power/schedule, system time synchronization, automatic startup, and full recovery backups remain subsequent work. Full stock OS images have not been backed up by this prototype; boot/firmware changes should wait for those backups.
 
 Actual measurements and checks are recorded in [the prototype results](../docs/pm3-prototype-results-2026-10-21.md).
+
+### Card-target illumination
+
+The normal launcher enables `--reader-lights`: the first documented LED is on
+while polling is ready; recognizing a card selects the second LED for one second,
+then returns to the ready indication. Feedback also works during a slideshow.
+The user observed slight pulsation in the physical LED trial; colors are not
+assumed. Audio remains controlled separately and disabled by default.
+
+Direct launches can omit `--reader-lights` to leave lighting unmanaged. Optional
+CLI settings are `--ready-light-mask 64`, `--tap-light-mask 128`, and
+`--tap-light-ms 1000`. Allowed masks are 0 (off), 64, 128, or 192 (both); tap
+duration is 100–5000 ms. These values can also be changed in `restart-display.sh`.
+LED commands are sent only on state changes, with no sleeps in the render loop.
+Graceful shutdown switches managed LEDs off; abrupt power loss/SIGKILL cannot
+run cleanup. Reader startup events reapply the indication after polling setup.
+Protocol reference: [cVEND LED command 0x20](https://wiki.pm3.dev/cvend).

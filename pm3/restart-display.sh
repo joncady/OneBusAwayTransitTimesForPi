@@ -12,6 +12,7 @@ if systemctl is-active --quiet nx || systemctl is-active --quiet init-abtproxy; 
   exit 1
 fi
 set -- --seconds "$PM3_DURATION" --enable-card-detection \
+  --reader-lights \
   --cards-file "$PM3_HOME/cards.local.json" \
   --actions-file "$PM3_HOME/actions.local.json" \
   --reader-info-file "$PM3_HOME/reader-info.local.bin"

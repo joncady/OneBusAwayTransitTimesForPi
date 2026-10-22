@@ -11,6 +11,7 @@ pub struct Reader {
     original: libc::termios,
     sequence: u8,
     detection_enabled: bool,
+    leds_used: bool,
     pub decoder: Decoder,
 }
 
@@ -49,8 +50,15 @@ impl Reader {
             original,
             sequence: 0,
             detection_enabled: false,
+            leds_used: false,
             decoder: Decoder::default(),
         })
+    }
+
+    /// Documented host-side indicator bitmap; does not access card contents.
+    pub fn set_leds(&mut self, mask: u32) -> io::Result<()> {
+        self.leds_used = true;
+        self.send(0x20, &mask.to_be_bytes())
     }
 
     pub fn enable_detection(&mut self) -> io::Result<()> {
@@ -101,6 +109,9 @@ impl Reader {
 
 impl Drop for Reader {
     fn drop(&mut self) {
+        if self.leds_used {
+            let _ = self.set_leds(0);
+        }
         if self.detection_enabled {
             let _ = self.send(0x32, &[]);
             let _ = self.send(0xe4, &[0, 6, 1, 0]);
