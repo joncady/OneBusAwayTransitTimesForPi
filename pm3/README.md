@@ -61,7 +61,7 @@ This compiles without running tests, prepares ignored `pm3/runtime.local/` setti
 
 To reuse an already compiled binary, append `--skip-build`. To change the interval, selected train/bus mode, paging, timezone, cache lifetime or error backoff, edit ignored `pm3/runtime.local/display.json` and redeploy. It is created from `display.example.json` on first deployment and preserved thereafter. Stops continue to come from `config/transit.json`. A station changed only on the device is replaced by that local config on the next deployment. Both JSON contracts reject unknown fields and validate bounds on load. Settings currently apply at restart; there is no settings web server or working touchscreen control.
 
-Defaults: train mode; one refresh cycle per 60 seconds after completion, one request per configured stop; three visible rows, paging every 10 seconds; stale after 180 seconds; cached arrivals expire after 900 seconds; failures back off up to 300 seconds. Fetches are sequential within one background worker with a 12-second request timeout and bounded responses. A failed stop makes the whole refresh fail so the previous complete snapshot is retained. Network failures never block NFC/rendering. Refreshes continue at the same bounded cadence during slideshows, so returning to departures uses the latest cache. Only the selected mode is fetched.
+Defaults: train mode; before the first successful fetch, retry after 5 seconds and double up to a 60-second cap (`startupRetrySeconds`, optional, 1–60 seconds). After the first success, use one refresh cycle per 60 seconds after completion, one request per configured stop; three visible rows, paging every 10 seconds; stale after 180 seconds; cached arrivals expire after 900 seconds; failures back off up to 300 seconds. Fetches are sequential within one background worker with a 12-second request timeout and bounded responses. A failed stop makes the whole refresh fail so the previous complete snapshot is retained. Network failures never block NFC/rendering. Refreshes continue at the same bounded cadence during slideshows, so returning to departures uses the latest cache. Only the selected mode is fetched.
 
 Countdowns and the Pacific clock use the API's `currentTime` anchored to monotonic elapsed time, refreshed each successful cycle. This avoids the device's incorrect wall clock without changing global time/RTC settings. The clock stays unavailable until the first successful fetch and disappears when the cache expires. System-wide time synchronization remains separate work; TLS still checks certificate validity against the OS clock, so a severely wrong OS date can prevent initial HTTPS access. This integration uses the new arrivals-while-idle requirement and does not enable the old Pi's scheduled screen blanking.
 
@@ -76,7 +76,7 @@ SSH key access must already work. Leave the working USB bootstrap attached initi
 ssh root@<device-host> 'cat /init/transit-prototype/prototype.log'
 ```
 
-The script refuses to launch while stock fare services or a previous prototype process are present. Persistent files go only into `/init/transit-prototype`, including the private `cards.local.json` alias registry. It launches a temporary systemd service for the specified number of seconds, with an additional service runtime limit. This survives SSH session cleanup and installs no boot service. SSH host-key checking remains enabled. Use the private host address outside this repository.
+The script refuses to launch while stock fare services or a previous prototype process are present. Persistent files go only into `/init/transit-prototype`, including the private `cards.local.json` alias registry. By default it launches a temporary systemd service for the specified number of seconds, with an additional runtime limit. This survives SSH session cleanup and installs no boot service. If automatic startup is already installed, live mode uses the continuous persistent service instead. SSH host-key checking remains enabled. Use the private host address outside this repository.
 
 For a bounded reader-only test (no framebuffer changes):
 
@@ -171,19 +171,36 @@ redistributed with this source.
 
 `--reader-info-file PATH` saves the first NFC version reply to a private mode-0600 file. It does not send any additional command: the startup version query is already part of normal operation. The reply includes a device identifier, so it is not printed in logs or intended for Git. The launcher uses `/init/transit-prototype/reader-info.local.bin`; only platform/application version strings are extracted for public investigation notes. Card-event payloads are not captured by this option.
 
-## QR scanner investigation
+## QR scanner: decode confirmed, album integration awaiting device verification
 
-The FTDI serial interface `/dev/ttyUSB0` enumerates. Community notes specify 115200 8N1, with no CRLF on decoded output. The bounded `check-qr.sh` trial only changed the scanner power bit and UART parameters while listening for a generated harmless QR; it did not send scanner programming commands.
+On 2026-10-22 the built-in scanner decoded the exact `PM3-QR-CHECK` payload
+from a phone through `/dev/ttyUSB0` at 115200 8N1. The user heard no beep.
+SSH stayed responsive, uptime continued, and the transit app remained active.
+This trial listened while the scanner light was already on; it sent no power,
+trigger or programming commands. The `barcode` control remained 0, so that value
+does not establish that the scanner is unpowered.
 
-The first trial produced no illumination or decoded data, and SSH/ping became unavailable during the trial. The user reset the reader. The prior boot journal was not retained and no persistent crash record was found, so the cause is unknown; a kernel crash or scanner-caused power fault is not established. The scanner was observed at state 0 after reboot and was left disabled. Live arrivals were restored. Do not rerun the power trial until the scanner model, trigger behavior and power path have been investigated. The helper attempts UART/power restoration on normal exit, but reboot/power loss cannot run cleanup. QR scanning is not integrated into the app.
+QR album support is implemented locally behind an opt-in configuration; it has
+not yet been deployed or physically verified. See [local preparation and deployment](#prepare-qr-album-triggers-locally).
+Per-album QR tokens and printable stickers are tracked as a [stretch goal](../BACKLOG.md#stretch-goal-qr-triggered-transit-photo-albums-and-printable-card-labels).
+No label printer is required for the first prototype.
 
-Local sample assets, source notes and personalized configuration live in ignored `pm3/media.local/`. The user-selected README demo is a separate, intentionally shared asset; see [demo media notes](../docs/media/README.md). The stock success sound is copied into app-owned storage for local use; its redistribution license is unconfirmed, so it is not tracked. A slight playback pop remains; further audio work is parked at the user's request.
+The earlier trial lost connectivity and required a reset; its cause remains
+unknown. `check-qr.sh` is that older power-toggle trial, not the passive procedure
+that succeeded. Do not use it as the normal scanner integration. Restoring UART
+settings after the successful passive trial produced ioctl warnings, so future
+integration must configure the port explicitly and handle reconnect/cleanup.
+Full observations: [QR trial history and successful follow-up](../docs/pm3-qr-and-albums-2026-10-21.md).
+
+Local sample assets, source notes and personalized configuration live in ignored `pm3/media.local/`. The user-selected README demo is a separate, intentionally shared asset; see [demo media notes](../docs/media/README.md). The stock success sound is copied into app-owned storage for local use; its redistribution license is unconfirmed, so it is not tracked. Audio remains disabled by default. On October 22, a manual trial produced an owner-confirmed clean chime by opening a continuous audio stream with the amplifier off, waiting three seconds before enabling it, then disabling it before closing playback. This sequence is not yet implemented in the application; playback startup while amplified remains the leading explanation for the pop. See issue [#8](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/8).
 
 ## Hardware references and limits
 
 The [RIPTA design document](https://kevin.wallace.seattle.wa.us/pm3/ripta-system-design-document.pdf), page 9, marks the touch panel/controller as optional. Page 12 specifies an 800 × 480 display with a smaller 754 × 480 visible area. Pages 13–14 describe the serial cVEND reader and ISO 14443 support. This document describes a product variant, not a physical inspection of this unit.
 
-The actual reader enumerates no touch controller. Dedicated touchscreen drivers are disabled, but USB HID multitouch support is compiled in. With no touch device on the USB bus, changing a GUI option or loading an existing touch module cannot currently enable it. Physical inspection is needed to distinguish absent hardware from a disconnected or unpowered controller.
+The PM3 uses transit cards and QR codes as its interface. Touchscreen support
+and touch wake are out of scope by the owner's decision. Earlier hardware
+findings are retained only as [archived notes](../docs/pm3-touchscreen-2026-10-22.md).
 
 Transport framing and card-event message types follow the community [cVEND protocol notes](https://wiki.pm3.dev/cvend). Broader card recognition validation, screen power/schedule, system time synchronization, automatic startup, and full recovery backups remain subsequent work. Full stock OS images have not been backed up by this prototype; boot/firmware changes should wait for those backups.
 
@@ -194,8 +211,8 @@ Actual measurements and checks are recorded in [the prototype results](../docs/p
 The normal launcher enables `--reader-lights`: the first documented LED is on
 while polling is ready; recognizing a card selects the second LED for one second,
 then returns to the ready indication. Feedback also works during a slideshow.
-The user observed slight pulsation in the physical LED trial; colors are not
-assumed. Audio remains controlled separately and disabled by default.
+The user verified left-to-right tap feedback, the correct album opening and
+the ready light returning. Slight pulsation was observed; colors are not assumed. Audio remains controlled separately and disabled by default.
 
 Direct launches can omit `--reader-lights` to leave lighting unmanaged. Optional
 CLI settings are `--ready-light-mask 64`, `--tap-light-mask 128`, and
@@ -205,3 +222,295 @@ LED commands are sent only on state changes, with no sleeps in the render loop.
 Graceful shutdown switches managed LEDs off; abrupt power loss/SIGKILL cannot
 run cleanup. Reader startup events reapply the indication after polling setup.
 Protocol reference: [cVEND LED command 0x20](https://wiki.pm3.dev/cvend).
+
+
+## Overnight shutdown, LCD timeout and automatic startup
+
+LCD timeout and scheduled wake are not implemented on PM3. The Pi schedule does
+not control this device. The planned behavior is configurable awake windows,
+backlight timeout, paused API polling while asleep and card wake; see the
+[LCD backlog](../BACKLOG.md#lcd-timeout-overnight-schedule-and-wake).
+
+It is fine to disconnect PoE overnight after a graceful shutdown:
+
+```sh
+ssh root@<device-host> 'systemctl poweroff'
+```
+
+Allow shutdown to complete before unplugging. An illuminated LCD does not by
+itself establish that Linux is still running. Keep the bootstrap USB attached.
+After reconnecting power and waiting for SSH, start a new session:
+
+```sh
+ssh root@<device-host> '/init/transit-prototype/restart-display.sh 3600 live'
+```
+
+Transient session duration is 1–86400 seconds (24 hours). Without the opt-in
+boot service, rebooting or reconnecting PoE does not automatically launch the app.
+With automatic startup installed, live mode runs continuously after boot.
+[Automatic startup and restart recovery](../BACKLOG.md#automatic-startup-and-restart-recovery)
+tracks persistent systemd setup, graceful dependency handling, crash recovery,
+preserved private settings and verification after a power cycle.
+
+## Prepare QR album triggers locally
+
+**Deployment status:** the QR-enabled app and private album map are deployed.
+The serial port connected at 115200 8N1, nine albums loaded and live arrivals
+continued under the persistent service. The first physical QR-to-album check is
+pending. The earlier successful scan proved transport, not this new integration.
+[Issue #3](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/3) stays open
+until the on-device and printed-label checks below pass.
+
+### Generate private codes and printable labels
+
+Use the same album folder names as your existing Desktop albums. A QR-only album
+may also use a new folder name; it does not require a working NFC card.
+
+```sh
+python3 -m venv .venv-media
+.venv-media/bin/python -m pip install -r pm3/requirements-qr.txt
+.venv-media/bin/python pm3/generate-qr-labels.py
+```
+
+This reads folder names under `~/Desktop/Transit Albums/` and creates:
+
+- `pm3/qr.local.json`: private token-to-album configuration, mode 0600.
+- `pm3/qr.local/*.png`: one code per registered album.
+- `pm3/qr.local/labels.html`: an offline print sheet, 30 mm QR squares by default.
+- `pm3/qr.local/manifest.local.json`: the private album-to-image index.
+
+These paths are ignored by Git. The tool does not connect to the PM3, upload
+photos, or change originals. Existing tokens are reused on subsequent runs so
+printed stickers continue working. Back up the private configuration; deleting
+it and regenerating creates different codes. Registered mappings are retained
+when a folder disappears; remove obsolete mappings explicitly from private JSON.
+Changing a token revokes its old code after the next QR deployment. Remove old
+PNGs/sheets separately if no longer needed.
+
+To choose individual album labels or another physical label size:
+
+```sh
+.venv-media/bin/python pm3/generate-qr-labels.py \
+  --album '<album name>' --size-mm 30
+```
+
+`--album` can be repeated. `--source`, `--config` and `--output` override default
+locations; `--show-labels` opts into printing personal album names below codes.
+The default captions are generic numbers. PNG filenames use opaque tokens;
+use the private manifest to find a particular album. Avoid publishing codes,
+sheets or the manifest. Codes select albums; they are not authentication,
+transit tickets, payment credentials, or a way to read fare balances.
+
+Open `labels.html` in a browser and print at **100% / actual size**, with browser
+headers/footers disabled. Start with plain paper or show a PNG on a phone. The
+white quiet zone is part of the printed square; do not crop it. A small printer
+is optional after physical size/distance checks. Keep important card markings
+visible if applying a sticker.
+
+### Configuration and runtime behavior
+
+See [qr.example.json](qr.example.json). The example uses a dummy token and is
+disabled; generate real private tokens with the host tool instead of reusing it.
+The generator enables new configurations and preserves existing settings.
+
+| Setting | Default / allowed values |
+| --- | --- |
+| `version` | `1` |
+| `enabled` | `true` for generated config; set false to disable scanning |
+| `device` | `/dev/ttyUSB0`; allowlisted `/dev/ttyUSB0`–`/dev/ttyUSB31` |
+| `cooldownMs` | `2000`; 250–10000 |
+| `frameGapMs` | `150`; 50–1000 |
+| `reconnectSeconds` | `5`; 2–60 |
+| `albums` | 1–32 opaque 32-character lowercase hex tokens mapped to configured album labels |
+
+Payload format is exactly `PM3-ALBUM:1:<token>`; no URL, name or path is encoded.
+Unknown codes, binary/malformed input and oversized records are discarded without
+logging contents. CR/LF delimiters are accepted. For the installed delimiter-free
+scanner, a quiet gap completes a scan; fragmented bytes within that gap are
+combined. Concatenated scans without a delimiter or sufficient gap are rejected
+as a whole. `frameGapMs` may need physical tuning; do not claim repeat-scan
+reliability until it has been checked on the actual reader.
+
+The app opens the serial port read-only/nonblocking, explicitly sets 115200 8N1,
+and reads at most 2048 bytes per UI iteration with a 256-byte record cap. It sends
+no scanner power, trigger or programming commands. A missing/disconnected port is
+retried without stopping NFC or arrivals. An advisory lock prevents cooperating
+app instances sharing the port; unrelated tools can ignore it, so do not run
+`check-qr.sh` or other scanner tools alongside the app. Saved UART restoration is
+attempted on close; driver failures are reported without stopping the display.
+
+A mapped QR calls the existing album action, using the same two-second cooldown
+across NFC and QR, slide/session duration, return to arrivals and optional audio
+setting. Repeated scans of the already-active album do not restart its session;
+NFC re-taps retain their existing restart behavior. A continuously presented code
+can open another session after the current one ends, so remove it after scanning.
+QR actions also request tap light feedback if reader lights are enabled.
+Unavailable media mappings are skipped at startup; restart after restoring USB
+media or changing configuration. Amplified WAV audio stays disabled unless you explicitly
+change the existing action settings. Scanning an unknown QR never opens a URL or
+executes a command.
+
+### Deploy and verify when the device is available
+
+The following commands **contact the device**. Wait until it is powered, ignition
+has been handled if required, and SSH is available. The camera does not provide
+remote ignition. No automatic boot service is installed by this QR feature.
+
+For existing albums already synced to USB, no photo transfer is necessary. For
+new QR-only albums, put photos in matching Desktop folders, start the existing
+app if necessary, then sync before enabling the new QR mappings:
+
+```sh
+.venv-media/bin/python pm3/sync-albums.py "$PM3_TARGET" --qr-file pm3/qr.local.json
+```
+
+`--qr-file` permits explicitly mapped QR-only folder names in addition to enrolled
+card labels and requires each mapped album to have photos. Without it, the
+original enrolled-card-only sync behavior remains. Photo sync does not install
+QR configuration; the next command deploys the app and map together.
+
+```sh
+./pm3/deploy-qr.sh "$PM3_TARGET" 3600
+```
+
+The opt-in helper builds, stages the app/map/launcher, validates QR album
+references against the existing action configuration before stopping the app,
+and restarts the continuous service if installed, otherwise starting a bounded live session. It preserves on-device transit stops, API
+settings, card registry and action/photo files. Unlike `deploy-live.sh`, it does
+not copy local transit settings over a device-only configuration. Use
+`PM3_QR_CONFIG=/path/to/private.json` for a different map or append `--skip-build`
+to use the already compiled binary.
+
+The launcher includes `--qr-file` only when `/init/transit-prototype/qr.local.json`
+exists. Direct launches opt in with `--qr-file PATH`. Configuration can be checked
+without opening serial ports or playing audio using `--check-config --qr-file PATH
+--actions-file PATH`; add the usual transit/display/env flags to validate those
+as well. The existing action file must contain every QR-mapped label, even if
+scanning is disabled.
+
+The helper saves `prototype.before-qr`, `restart-display.before-qr.sh`,
+`start-display.before-qr.sh` (if present) and, if
+present, `qr.before-qr.local.json`. If immediate startup fails, it attempts to
+restore them and restart the previous app. It is not a power-failure-atomic
+upgrade or a full recovery backup. For manual rollback, stop the service, restore
+the compatible app/launcher/map set (remove `qr.local.json` if previously absent),
+then use the restored `restart-display.sh`. Never overwrite a running binary.
+
+Physical acceptance checklist (two distinct phone-to-album selections have passed):
+
+1. Present one generated PNG on a phone: correct album opens, tap light changes,
+   slideshow returns to live arrivals, and amplified WAV audio stays muted. With
+   reader feedback enabled, expect one confirmation beep for an accepted selection.
+2. Present a second album's code; verify it selects a different album. Remove the
+   phone and wait at least two seconds before repeating. Check that a held code
+   does not keep resetting the active session; remove it before the session ends.
+3. Present an unrelated QR; it should leave the current view unchanged. Tap a
+   familiar NFC card to confirm the original album flow still works.
+4. Try a plain-paper code at actual label size, then choose adhesive/printer size
+   based on readable distance and placement.
+5. Confirm scanner reconnect and configuration rollback while preserving SSH.
+   Reboot/ignition testing waits for the owner's physical presence.
+
+### Reader confirmation beep
+
+The standard launchers enable `--reader-buzzer`: an accepted NFC or QR album
+selection sends one documented cVEND `0x22` command through the existing reader
+connection. It uses the reader's own buzzer, not ALSA or the Linux amplifier.
+Unknown cards/codes, cooldown rejections and repeated QR scans of the active album
+do not request a beep. Reader write failures disable buzzer feedback for that run
+without cancelling the album action. A missing NFC reader leaves QR albums usable
+without sound.
+
+Direct launches are silent unless `--reader-buzzer` is supplied. Tune the tone
+with `--buzzer-frequency` (default 1536 Hz, allowed 100–5000) and
+`--buzzer-duration-ms` (default 256, allowed 20–1000). To mute the standard
+launchers, create `/init/transit-prototype/buzzer.disabled` and restart the display;
+remove the marker and restart to restore beeps. `soundEnabled: false` continues
+to disable WAV playback independently. The amplifier remains off.
+
+Two phone QR codes were physically verified selecting their distinct albums.
+Printed stickers, scanner reconnect and a reboot with QR enabled remain to be
+verified. The owner physically confirmed that the integrated card and QR selections each
+give one clean beep and open the correct album. Amplified WAV playback stays off.
+
+## Automatic startup (opt-in)
+
+`transit-display.service` runs the live app continuously after the existing
+`init-rc`/USB bootstrap completes. It does not replace the bootstrap or provide
+ignition. Leave the USB attached. Network availability does not block launch;
+the app retries promptly while DHCP/DNS settles and displays its existing
+offline/cache status. After the first successful API fetch, regular polling and
+error backoff apply.
+
+Before the first install, save private recovery images of both internal cards,
+SPI flash and the USB contents. The helper below applies only to the audited
+storage layout and refuses a different mapping. It temporarily stops the app
+and remounts `/init` read-only while imaging, then restores the writable mount
+and prior app mode. Do not disconnect power during imaging.
+
+```sh
+./pm3/backup-device.sh "$PM3_TARGET"
+./pm3/install-autostart.sh "$PM3_TARGET"
+```
+
+Recovery images are stored under USB `transit-recovery/` and copied to ignored
+`pm3/recovery.local/` on the development computer. Local compressed checksums and
+gzip integrity are checked. These images contain private credentials/settings;
+keep them out of Git and shared media. Imaging is not a physical restoration test.
+The USB file archive is not frozen; internal disk images are taken read-only.
+
+The installer builds by default, validates private configuration, saves the
+previous app/launcher and stock proxy enabled state, then installs a regular unit
+file in `/etc/systemd/system/`. It enables the display and disables the stock
+proxy's boot entry so it cannot compete for the reader. The stock NX program,
+USB bootstrap, PIC watchdog setup, API settings, card registry and albums are
+preserved. Root is returned to read-only if originally read-only. Install failure
+attempts to restore the previous bounded app. No reboot is performed automatically.
+
+For an already compiled binary, append `--skip-build`. `PM3_BINARY` can select
+an explicitly prepared executable; it must support `--continuous`. A startup-only
+trial can be built from the last working app plus that flag, leaving QR support
+out until its separate acceptance test. The installer refuses to overwrite an
+existing installed display unit; use normal app deployment helpers for updates.
+
+The service uses `Restart=on-failure`, a ten-second delay, five starts per five
+minutes, graceful SIGTERM shutdown, and journal logging. It has no poweroff
+failure action. `--continuous` removes the app's prototype expiry; it is not a
+hardware watchdog. Bad configuration can exhaust the start limit while SSH
+remains available for recovery.
+
+```sh
+ssh "$PM3_TARGET" 'systemctl status transit-display --no-pager'
+ssh "$PM3_TARGET" 'journalctl -u transit-display -b --no-pager -n 40'
+ssh "$PM3_TARGET" 'systemctl restart transit-display'
+# After fixing a repeated startup failure:
+ssh "$PM3_TARGET" 'systemctl reset-failed transit-display; systemctl start transit-display'
+```
+
+Once installed, `restart-display.sh ... live` and album sync restart the
+persistent live service; the duration argument applies only to transient
+sessions. A sample-mode launch temporarily stops the persistent service and
+runs the bounded sample instead. Resume live with `restart-display.sh ... live`.
+Deployment scripts stop either service before replacing its executable. The
+persistent and transient services cannot own the display/reader simultaneously.
+
+For a cold-boot acceptance check, gracefully power off, disconnect/reconnect PoE,
+and handle ignition physically if required. Wait for the app to appear before
+issuing any manual start command. Read-only SSH checks can verify the boot ID,
+service startup timestamp, live-arrival logs and whether the unit is enabled;
+SSH must not be used to launch it during that check. Confirm an existing card
+still selects its album. Record delayed-network, missing-media and crash-recovery
+checks separately rather than assuming they passed from one successful boot.
+
+To remove only automatic startup and restore the stock proxy's previous enabled
+state (without starting fare software immediately):
+
+```sh
+./pm3/uninstall-autostart.sh "$PM3_TARGET"
+```
+
+The app and private files remain. `restart-display.sh 3600 live` then creates a
+bounded session again. For emergency recovery without deleting files, stop and
+disable `transit-display.service` and remove `/init/transit-prototype/autostart.enabled`.
+Power management/LCD timeout is a separate feature; this service does not turn
+the backlight off on a schedule.

@@ -1,5 +1,26 @@
 # Project backlog
 
+## GitHub issue tracker
+
+Open work is tracked in GitHub issues. The sections below retain historical
+checkpoints and implementation context; use the issues for current task tracking.
+
+- [Japanese FeliCa card discovery — #2](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/2)
+- [QR-triggered albums and printable card labels — #3](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/3)
+- [LCD idle timeout, scheduled wake and card wake — #4](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/4)
+- [Automatic startup and restart recovery — #5](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/5)
+- [Full device recovery backups and deployment rollback — #6](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/6)
+- [Reliable system time, timezone and clock recovery — #7](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/7)
+- [Investigate speaker pop before re-enabling audio — #8](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/8)
+- [Validate card identity and offline/media failure recovery — #9](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/9)
+- [Bound log growth and retained media releases — #10](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/10)
+- [Prefetch slideshow images without blocking the UI — #11](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/11)
+- [Optional LAN album hosting and remote photo management — #13](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/13)
+
+### Out of scope
+
+- Touchscreen support and touch wake: [#12](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/12), closed as not planned. The owner chose transit cards and QR codes as the PM3 interface. [Archived findings](docs/pm3-touchscreen-2026-10-22.md).
+
 ## Port transit display to PROXmobil3
 
 **Status:** native Rust/Slint integration runs from internal storage with authenticated live OneBusAway arrivals, automatic paging, and the existing private card-triggered USB slideshow/sound. Nine card aliases are saved privately. Live fetching and paging were observed on-device on 2026-10-21. A slight audio pop is parked at the user's request. Production startup, recovery backups, broader failure/reboot validation, and optional controls remain pending. See [the audit](docs/pm3-audit-2026-10-21.md) and [prototype results](docs/pm3-prototype-results-2026-10-21.md).
@@ -12,8 +33,8 @@ Additional references: [board overview](https://wiki.pm3.dev/main_board_overview
 ### Checkpoints
 
 1. **Inventory and connectivity — done:** Ethernet and authenticated, certificate-verified OneBusAway requests work on this device. Quiet pre-application baseline: ~337 MiB estimated available memory, ~99.9% CPU idle. These are not application benchmarks.
-2. **Recovery and physical requirements — pending:** back up both internal cards and SPI flash. Confirm input/touch hardware and decide on Ethernet or an external wireless solution. Preserve SSH/bootstrap access.
-3. **Time and power — pending:** correct the nearly five-hour UTC offset, choose Pacific timezone and time synchronization, and test vendor PIC LCD/backlight controls. Existing Pi DPMS behavior cannot be reused. Touch wake remains unproven.
+2. **Recovery and physical requirements — pending:** back up both internal cards and SPI flash. Preserve SSH/bootstrap access.
+3. **Time and power — pending:** correct the nearly five-hour UTC offset, choose Pacific timezone and time synchronization, and test vendor PIC LCD/backlight controls. Existing Pi DPMS behavior cannot be reused. Wake will use transit cards and QR codes.
 4. **Native rendering experiment — passed:** static ARMv7 Rust/Slint prototype renders directly to the framebuffer with the installed font. Initial short sample: ~19.9 MiB RSS, ~2.1% CPU, one thread. NFC module replies and polling configuration are verified. Adding CardRelease fixed repeat taps; two physical cards each kept their private alias across repeated scans. Additional card types and stability across device power cycles remain to test. See the results for measurement limits; the current Node/Python implementation is not a constraint.
 5. **Integration — live trial deployed:** train/bus modes are selected through validated private settings; refresh, paging, cache lifetime and backoff are configurable. One background worker refreshes the selected mode during arrivals and slideshow views. Arrival countdowns and the displayed clock use API server time plus monotonic elapsed time. `pm3/deploy-live.sh` builds/transfers private configuration and launches a transient service; permanent startup and recovery remain pending. The latest idle behavior is arrivals on-screen, so the old scheduled-off policy is not enabled.
 
@@ -24,7 +45,7 @@ Additional references: [board overview](https://wiki.pm3.dev/main_board_overview
 - Ethernet is acceptable; the reader will live near the router. Onboard Wi-Fi is not required.
 - Preserve cVEND NFC support for tapping physical ORCA cards. First prove generic card detection, then test stable identification for an enrolled card and add configurable visual/chime actions. Card recognition does not require fare operations; keep raw card identifiers and enrollment data private.
 - **Card trial update:** Nine aliases are named in the private on-device registry. Eight use the current ISO UID extraction; the Taiwan keychain uses an experimental hash of its complete `UnhandledCard` message. Two separate keychain taps matched. Test stability across power cycles and separation from other unhandled cards before relying on that experimental identity.
-- Touch is optional. The RIPTA design diagram marks touch hardware as optional; USB HID multitouch is compiled in but no controller enumerates. No working touch enable switch is established. Physical inspection is the next useful check if touch becomes important.
+- Touch is optional. The RIPTA design diagram marks touch hardware as optional; USB HID multitouch is compiled in but no controller enumerates. No working touch enable switch is established. Further touch work is out of scope; use transit cards and QR codes as the interface.
 - Native Rust/Slint integration lives in `pm3/`: live or sample departures, optional NFC detection, and a configurable sound/photo action. Speaker audio is confirmed; a slight pop remains parked. See [instructions](pm3/README.md) and [results](docs/pm3-prototype-results-2026-10-21.md).
 - Prefer internal `/init` storage for the prototype. Leave the USB bootstrap attached initially for recovery/startup access; remove that dependency only after a persistent startup plan and backups are ready.
 
@@ -43,7 +64,7 @@ Requested behavior: show live arrivals by default. A configured enrolled card pl
 ### Desktop albums and QR follow-up
 
 - Per-card USB album mappings are implemented and the backward-compatible native build is deployed. `pm3/sync-albums.py` prepares Desktop originals into resized, oriented JPEG copies and publishes a new USB release. The user-approved Desktop album directory and card folders are ready; syncing personal photos awaits the user's arrangement. Path indexing and one-photo-at-a-time decoding replace the previous 16-photo preload limit. Up to 512 photos per album and 32 mappings are supported.
-- The first authorized QR trial produced no illumination or decoded data. SSH/ping became unavailable during the trial, and the user reset the reader. No prior boot journal/crash evidence survived; cause is unknown. Live arrivals were restored, scanner control is back at its original 0, and further QR power/trigger trials are deferred pending model/control/power investigation. Do not label this as confirmed scanner support or a proven scanner-caused crash.
+- The first authorized QR trial produced no illumination or decoded data. SSH/ping became unavailable during the trial, and the user reset the reader. No prior boot journal/crash evidence survived; cause is unknown. Live arrivals were restored, scanner control is back at its original 0, and further power/trigger changes were deferred. A later passive trial on 2026-10-22 successfully decoded a known QR without a power toggle; see the stretch goal below. The original connectivity loss remains unexplained.
 - The new post-reboot alias was confirmed to be an additional ORCA card, named privately, with a matching Desktop album folder. This was not evidence of identifier drift in an existing card; cross-reboot stability still needs its own confirmation.
 - Details: [QR and album results](docs/pm3-qr-and-albums-2026-10-21.md).
 
@@ -82,7 +103,7 @@ Keep rendering, reader polling, network work, and audio nonblocking. Prefer dire
 - Adapter loads/preloads in a standalone diagnostic but fails in the stock application's context. PCI-LSM activation is directly observed. Primary FEIG security documentation supports a signed-application explanation; the exact failing check remains unproven. Updated SDK/signing inquiry is drafted, not sent. No Japanese-card readiness or IDm is claimed.
 - Ordinary transit and private card albums restored after diagnostics, with audio still off. No firmware/security changes. Physical taps follow authorized discovery readiness.
 - Gated maintenance binaries behind an explicit Cargo feature, made builds compile-only by default, added a shared transient-service restart helper and separated working setup from experimental research in docs. Added a reference index, handoff/privacy/recovery instructions and stronger private-file ignore patterns.
-- Pending before permanent deployment: full recovery images, boot-service/watchdog integration, bounded log/media release retention, background photo prefetch if transition latency is visible, and repeated-tap/reboot identity confirmation. QR and audio remain parked.
+- Pending before permanent deployment: full recovery images, boot-service/watchdog integration, bounded log/media release retention, background photo prefetch if transition latency is visible, and repeated-tap/reboot identity confirmation. QR decoding was subsequently confirmed; album integration is now prepared locally, pending physical verification. Audio remains parked.
 
 ### Japanese cards: paused after parallel research
 
@@ -95,11 +116,35 @@ Tracked on GitHub: [issue #2](https://github.com/joncady/OneBusAwayTransitTimesF
 
 ### Stretch goal: QR-triggered transit photo albums and printable card labels
 
-**Status:** planned. The built-in scanner decoded a known QR from a phone on 2026-10-22 without a beep; live arrivals remained active. See [scanner validation](docs/pm3-qr-and-albums-2026-10-21.md). This supersedes the earlier deferred/unconfirmed QR status above. QR events are not yet wired into the application.
+**Status:** deployed with scanner connected; two distinct phone-to-album selections verified; printed-label and reconnect acceptance pending in [issue #3](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/3). The built-in scanner decoded a known QR from a phone on 2026-10-22 without a beep; live arrivals remained active. See [scanner validation](docs/pm3-qr-and-albums-2026-10-21.md). This supersedes the earlier deferred/unconfirmed QR status above. The new opt-in QR module is deployed and maps tokens to the existing album action; two distinct phone-to-album selections are physically verified. Private PNGs and an offline print sheet have been generated. See [the setup/checklist](pm3/README.md#prepare-qr-album-triggers-locally).
 
 - Allow each album to have a configurable QR trigger alongside its NFC card mapping. Scanning opens the same slideshow and returns to arrivals under the existing duration/cooldown rules. This can provide an album trigger for cards whose NFC technology is not supported.
 - Generate QR images and printable label sheets on the development computer. Use opaque album tokens rather than personal names, card identifiers, local paths or credentials in the QR payload. Resolve tokens through private configuration; never execute commands or open arbitrary scanned URLs.
 - Support phone-displayed codes first, then adhesive labels small enough to attach to transit cards. Include a short optional human-readable label and preserve the QR quiet zone and contrast. Validate physical label size, scanning distance and placement before selecting a small label printer or buying supplies; no printer purchase is required for the prototype.
 - Integrate bounded serial reads, repeated-scan cooldown, safe handling of unknown codes, and port reconnect/recovery while keeping NFC, arrivals and photo playback responsive. Configure UART settings explicitly and address the restoration/ioctl warnings observed during the successful trial.
 
-**Checkpoints:** (1) one configured QR opens an existing USB album; (2) multiple QR codes select distinct albums and unknown codes are ignored safely; (3) a printed sticker scans reliably on a card; (4) document generation, optional printer workflow and reboot/reconnect behavior. Keep audio disabled unless separately revisited.
+**Checkpoints:** (1) one configured QR opens an existing USB album; (2) multiple QR codes select distinct albums and unknown codes are ignored safely; (3) a printed sticker scans reliably on a card; (4) document generation, optional printer workflow and reboot/reconnect behavior. Use the reader buzzer for accepted album actions; amplified WAV playback remains disabled.
+
+### LCD timeout, overnight schedule and wake
+
+**Status:** requested; not implemented on PM3. The LCD currently stays illuminated.
+
+- Add configurable idle timeout and scheduled awake windows, initially weekdays 07:00–08:00 in America/Los_Angeles. Keep settings in private configuration and permit disabling the timeout.
+- Verify actual LCD/backlight off/on controls with a reversible experiment and state readback. A black framebuffer alone does not turn off the backlight. The vendor `prox2 backlight` command is a toggle; establish its semantics before using it automatically.
+- Keep Linux and the card reader available while dark. Wake on a recognized card, start its album, then return to the appropriate arrivals/idle state. Add QR wake after scanner integration; touch wake is out of scope. Coordinate the ready light with the asleep state.
+- Pause OneBusAway polling while asleep outside the awake schedule; refresh promptly on wake and preserve sensible stale/offline behavior. Resume scheduled arrivals automatically during the commute window.
+- Establish reliable system time/timezone before wall-clock scheduling. Coordinate with permanent boot startup so power cycling restores the app and its intended display state.
+
+**Checkpoints:** safely switch the backlight off/on without losing SSH; demonstrate a short idle timeout and card wake; verify scheduled wake/polling; verify reboot and recovery. Until then, use a graceful OS shutdown before disconnecting PoE for the night. The default transient service does not automatically return after power loss; the opt-in continuous boot service is now installed and its first cold boot verified.
+
+### Automatic startup and restart recovery
+
+**Status:** continuous app/service installed and enabled; automatic launch and live-arrival recovery verified after a physical cold boot. The updated app also passed a second cold boot with immediate arrivals and zero restarts. Controlled retry timing and broader recovery acceptance remain pending. The original transient mode remains available. See [startup trial](docs/pm3-autostart-2026-10-22.md).
+
+- Install a persistent systemd service that launches the native transit app automatically after boot, preserving existing USB bootstrap and SSH recovery access.
+- Remove the prototype's bounded runtime for permanent operation; retain a separate bounded diagnostic launch option. Restart on unexpected failure with a delay and bounded retries, without invoking the stock service's poweroff behavior.
+- Handle network/API unavailability at startup and missing USB albums gracefully. Show arrivals/offline status while retrying dependencies, and keep card polling and reader illumination working.
+- Preserve private transit settings, card registry, album mappings and muted audio across updates and reboots. Coordinate boot-time LCD state with the timeout/schedule feature.
+- Document installation, service status/logs, manual restart, disable/uninstall, and rollback. Complete recovery backups before enabling permanent startup.
+
+**Acceptance:** after a graceful shutdown and PoE reconnect, the device starts the app without SSH intervention, shows the configured arrivals once networking is ready, and recognizes existing cards/albums. Confirm controlled reboot, delayed network availability, missing USB media, and app-crash recovery without a reboot loop. Confirm remote recovery remains available.

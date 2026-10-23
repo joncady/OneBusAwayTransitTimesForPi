@@ -61,6 +61,11 @@ impl Reader {
         self.send(0x20, &mask.to_be_bytes())
     }
 
+    /// cVEND's own buzzer; independent of Linux PCM playback and its amplifier.
+    pub fn beep(&mut self, frequency: u16, duration_ms: u16) -> io::Result<()> {
+        self.send(0x22, &buzzer_payload(frequency, duration_ms)?)
+    }
+
     pub fn enable_detection(&mut self) -> io::Result<()> {
         self.detection_enabled = true;
         // Release any session left by a previous process before re-enabling RF polling.
@@ -120,5 +125,47 @@ impl Drop for Reader {
         unsafe {
             libc::tcsetattr(self.port.as_raw_fd(), libc::TCSANOW, &self.original);
         }
+    }
+}
+
+fn buzzer_payload(frequency: u16, duration_ms: u16) -> io::Result<[u8; 4]> {
+    if !(100..=5000).contains(&frequency) || !(20..=1000).contains(&duration_ms) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "buzzer frequency must be 100..5000 Hz and duration 20..1000 ms",
+        ));
+    }
+    let frequency = frequency.to_be_bytes();
+    let duration = duration_ms.to_be_bytes();
+    Ok([frequency[0], frequency[1], duration[0], duration[1]])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn documented_buzzer_payload_and_frame() {
+        let payload = buzzer_payload(1536, 256).unwrap();
+        assert_eq!(payload, [6, 0, 1, 0]);
+        let frame = ipp::frame(1, 0x22, &payload);
+        assert_eq!(frame.len(), 11); // Short command: no payload CRC32.
+        let mut decoder = Decoder::default();
+        assert_eq!(
+            decoder.feed(&frame),
+            vec![Message {
+                kind: 0x22,
+                payload: payload.to_vec()
+            }]
+        );
+    }
+
+    #[test]
+    fn buzzer_parameters_are_bounded() {
+        for (hz, ms) in [(99, 256), (5001, 256), (1536, 19), (1536, 1001)] {
+            assert!(buzzer_payload(hz, ms).is_err());
+        }
+        assert!(buzzer_payload(100, 20).is_ok());
+        assert!(buzzer_payload(5000, 1000).is_ok());
     }
 }

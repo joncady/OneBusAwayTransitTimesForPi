@@ -2,6 +2,7 @@
   "mode": "train",
   "timezone": "America/Los_Angeles",
   "refreshSeconds": 60,
+  "startupRetrySeconds": 5,
   "pageSeconds": 10,
   "staleAfterSeconds": 180,
   "maxCacheAgeSeconds": 900,

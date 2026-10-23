@@ -5,7 +5,7 @@
 The native app combines live OneBusAway arrivals, private card aliases and USB
 photo albums. The user confirmed card → slideshow → live-arrivals return and
 distinct labels for the currently enrolled cards. Sound is muted by default;
-the amplifier pop remains parked. Photos are arranged on the development
+amplified playback remains off; a clean reader-buzzer confirmation is now implemented. Photos are arranged on the development
 computer and resized before USB publication.
 
 The original Pi app remains available. PM3 uses Rust/Slint plus the installed
@@ -14,12 +14,15 @@ The PM3 and its embedded cVEND reader use different ARM targets.
 
 | Area | Current state |
 | --- | --- |
-| Native board, live arrivals, card albums | Working integration, transient sessions |
-| Audio | Disabled; pop unresolved |
+| Native board, live arrivals, card albums | Working integration; continuous startup and bounded diagnostics |
+| Audio | Reader confirmation beep implemented; amplified WAV playback disabled |
 | Japanese FeliCa cards | Experimental; no confirmed readiness or decoded IDm |
-| QR | Deferred after a prior loss of connectivity; cause unconfirmed |
-| Touch | No controller/input device exposed on this unit |
-| Permanent startup, power schedule, full OS recovery | Pending |
+| QR scanner | Two phone codes select distinct albums; printed labels/reconnect still pending |
+| Card-target illumination | Ready and brief left-to-right tap feedback verified |
+| Interface | Transit cards and QR codes; touchscreen support out of scope |
+| Automatic startup | Continuous service installed/enabled; automatic cold-boot launch and arrival recovery verified |
+| LCD timeout/wake | Pending |
+| Recovery | Private internal-card/SPI/USB copies verified; physical restore untested |
 
 ## Source layout
 
@@ -28,6 +31,9 @@ The PM3 and its embedded cVEND reader use different ARM targets.
 - `reader.rs`, `ipp.rs`: UART ownership and framed transport.
 - `cards.rs`: salted local fingerprints and aliases.
 - `media.rs`: USB albums and optional bounded audio playback.
+- `qr.rs`: bounded nonblocking scanner input, token lookup, cooldown and reconnect.
+- `generate-qr-labels.py`, `qr_config.py`: private token registry, PNG and printable HTML generation.
+- `deploy-qr.sh`: opt-in app/map deployment preserving current on-device transit settings.
 - `felica_trial.rs`: explicit private diagnostic capture, requiring readiness.
 - `pm3/src/bin/`: allowlisted reader-maintenance utilities, gated by the
   `reader-maintenance` feature.
@@ -148,3 +154,81 @@ config replacement and makes that remote deployment block fail on errors. It
 was reviewed with shell syntax checks; this documentation/media pass does not
 claim a new end-to-end deployment or physical-card test. Existing compile results
 above predate this shell-only correction. No commit or push is performed here.
+
+
+## Current hardware checkpoint — 2026-10-22
+
+The later passive QR trial succeeded without changing scanner power; see
+[the results](pm3-qr-and-albums-2026-10-21.md#follow-up-validation--2026-10-22-successful-decode).
+UART restoration warnings remain to address before normal integration. The
+deployed scanner is not yet wired to albums. Local integration and printable QR
+labels are now prepared; see the preparation checkpoint below.
+
+Reader ready/tap illumination is deployed and physically confirmed. Original
+private transit/display settings were restored after the demo, and audio remains
+off. The latest launch was a bounded 24-hour session, not permanent startup.
+LCD timeout/wake and automatic startup/recovery have dedicated
+[backlog entries](../BACKLOG.md). Use graceful OS shutdown before disconnecting
+PoE, then manually launch a new session after power returns.
+
+
+## QR preparation while the device is off — 2026-10-22
+
+The opt-in native QR module and private album mapping now compile for ARM. The
+host generator produced nine private PNGs and an offline printable sheet from
+existing album folders. Generated tokens, labels and the manifest remain ignored.
+NFC/QR share the media action and cooldown; no scanner power/trigger writes are
+implemented. The album sync tool accepts explicitly mapped QR-only folders.
+
+The code has not been deployed and no device was contacted during this work.
+Physical validation and any ignition-dependent reboot work remain for the owner.
+[QR setup](../pm3/README.md#prepare-qr-album-triggers-locally) includes the opt-in
+preserving deployment helper, rollback notes and acceptance checklist. Issue #3
+remains open. No new tests were added or run for this preparation.
+
+
+## Automatic startup trial — 2026-10-22
+
+Private recovery copies of both internal cards, SPI flash and USB files were
+saved and verified before installing a continuous startup-only app. The enabled
+`transit-display.service` waits for the existing bootstrap and has bounded failure
+restarts with no poweroff action. SSH and original transit/card/media settings
+are preserved. Automatic cold-boot launch and arrival recovery were verified; see
+[the trial record](pm3-autostart-2026-10-22.md). QR changes remain undeployed.
+
+
+Second physical cold boot also passed with the updated startup-only app: automatic
+launch at about 14.4 seconds, first-fetch arrivals, nine loaded albums, accepted
+card polling, amplifier off, and more than seven minutes of regular refreshes
+with zero restarts. No manual start command was used. Network was already ready,
+so the new startup failure retry timing was not exercised in that run. QR remains
+undeployed; physical card/album acceptance and broader failure cases remain open.
+
+
+QR-enabled native build is now deployed under the persistent service. Scanner
+connection, nine albums, live arrivals, original transit/display settings and
+muted amplifier were checked. Two private phone-test codes are ready; physical
+QR-to-album acceptance is pending the owner's return. Historical notes above
+about QR remaining undeployed describe earlier checkpoints.
+
+## Reader sound checkpoint — 2026-10-22
+
+The documented cVEND buzzer produced a clean beep matching the startup sound,
+with the Linux amplifier off. Amplified playback of digital silence still popped.
+A manual stream-open/amp-enable sequence sounded clean, but the owner chose the
+reader buzzer for immediate feedback. Accepted card/QR album actions now request
+one bounded tone through the existing UART owner. WAV playback remains muted;
+issue #8 tracks the optional amplified-audio lifecycle work. See PM3 setup for
+the independent mute marker and CLI frequency/duration settings.
+
+The updated continuous app was deployed with nine albums and both NFC polling
+modes accepted. Original transit/display/API/card/action files matched their
+pre-deployment hashes. The service is enabled and active, with zero automatic
+restarts and amplifier state 0. The owner confirmed successful card and QR album
+selection, each with one clean beep. All nine Rust unit tests passed; the ARMv7
+release build, changed shell/Python syntax, example JSON, local documentation
+links and whitespace checks passed. A scoped privacy scan found none of the
+checked credentials, personal stop values or QR tokens in candidate source/docs.
+Private media, token maps and recovery images remain ignored. These checks do
+not exercise printed labels, scanner reconnect or a cold boot of this newest
+QR/buzzer build; those remain tracked in issues #3 and #5.

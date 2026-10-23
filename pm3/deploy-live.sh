@@ -58,9 +58,11 @@ ssh -o BatchMode=yes "$PM3_TARGET" '
 '
 ssh -o BatchMode=yes "$PM3_TARGET" '
   set -eu
-  if systemctl show transit-prototype.service --property=LoadState --value 2>/dev/null | grep -q "^loaded$"; then
-    systemctl stop transit-prototype.service
-  fi
+  for unit in transit-display.service transit-prototype.service; do
+    if systemctl show "$unit" --property=LoadState --value 2>/dev/null | grep -q "^loaded$"; then
+      systemctl stop "$unit"
+    fi
+  done
   cd /init/transit-prototype
   umask 077
   for name in transit.local.json display.local.json api.env; do

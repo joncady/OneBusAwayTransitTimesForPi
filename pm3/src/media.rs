@@ -100,37 +100,7 @@ pub struct Media {
 
 impl Media {
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        if fs::metadata(path)?.len() > 16 * 1024 {
-            return Err("media configuration too large".into());
-        }
-        let config: Config = serde_json::from_slice(&fs::read(path)?)?;
-        if !(1..=60).contains(&config.slide_seconds)
-            || !(5..=600).contains(&config.session_seconds)
-            || !(1..=10).contains(&config.sound_timeout_seconds)
-        {
-            return Err("invalid media action configuration".into());
-        }
-        let mut directories = config.albums.clone();
-        if let Some(path) = &config.photo_directory {
-            if directories
-                .insert(config.trigger_card.clone(), path.clone())
-                .is_some()
-            {
-                return Err("duplicate legacy/card album setting".into());
-            }
-        } else if !config.trigger_card.is_empty() {
-            return Err("triggerCard requires photoDirectory".into());
-        }
-        if directories.is_empty()
-            || directories.len() > 32
-            || directories.keys().any(|label| {
-                label.trim().is_empty()
-                    || label.chars().count() > 32
-                    || label.chars().any(char::is_control)
-            })
-        {
-            return Err("configure 1–32 valid card album mappings".into());
-        }
+        let (config, directories) = load_config(path)?;
         let mut albums = BTreeMap::new();
         for (label, directory) in directories {
             match photo_paths(&directory) {
@@ -167,15 +137,28 @@ impl Media {
         })
     }
 
-    pub fn tap(&mut self, label: &str) {
+    pub fn has_album(&self, label: &str) -> bool {
+        self.albums.contains_key(label)
+    }
+
+    /// Repeated scanner output must not keep restarting the current slideshow.
+    pub fn scan(&mut self, label: &str) -> bool {
+        if self.triggered.is_some() && self.active_album.as_deref() == Some(label) {
+            return false;
+        }
+        self.tap(label)
+    }
+
+    /// NFC and QR share the same action and two-second cross-input cooldown.
+    pub fn tap(&mut self, label: &str) -> bool {
         if !self.albums.contains_key(label) {
-            return;
+            return false;
         }
         if self
             .triggered
             .is_some_and(|start| start.elapsed() < Duration::from_secs(2))
         {
-            return;
+            return false;
         }
         self.active_album = Some(label.to_string());
         self.stop_sound();
@@ -201,6 +184,7 @@ impl Media {
             }
         };
         println!("Media action triggered");
+        true
     }
 
     pub fn tick(&mut self) -> Option<(bool, Option<slint::Image>)> {
@@ -265,6 +249,49 @@ impl Media {
     }
 }
 
+/// Validate references without opening media or enabling audio/hardware.
+pub fn configured_labels(path: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let (_, directories) = load_config(path)?;
+    Ok(directories.into_keys().collect())
+}
+
+fn load_config(
+    path: &str,
+) -> Result<(Config, BTreeMap<String, PathBuf>), Box<dyn std::error::Error>> {
+    if fs::metadata(path)?.len() > 16 * 1024 {
+        return Err("media configuration too large".into());
+    }
+    let config: Config = serde_json::from_slice(&fs::read(path)?)?;
+    if !(1..=60).contains(&config.slide_seconds)
+        || !(5..=600).contains(&config.session_seconds)
+        || !(1..=10).contains(&config.sound_timeout_seconds)
+    {
+        return Err("invalid media action configuration".into());
+    }
+    let mut directories = config.albums.clone();
+    if let Some(path) = &config.photo_directory {
+        if directories
+            .insert(config.trigger_card.clone(), path.clone())
+            .is_some()
+        {
+            return Err("duplicate legacy/card album setting".into());
+        }
+    } else if !config.trigger_card.is_empty() {
+        return Err("triggerCard requires photoDirectory".into());
+    }
+    if directories.is_empty()
+        || directories.len() > 32
+        || directories.keys().any(|label| {
+            label.trim().is_empty()
+                || label.chars().count() > 32
+                || label.chars().any(char::is_control)
+        })
+    {
+        return Err("configure 1–32 valid card album mappings".into());
+    }
+    Ok((config, directories))
+}
+
 fn photo_paths(directory: &std::path::Path) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
     let mut paths = Vec::new();
     let mut entries = 0;
@@ -323,5 +350,52 @@ fn decode_photo(path: &std::path::Path) -> Result<slint::Image, Box<dyn std::err
 impl Drop for Media {
     fn drop(&mut self) {
         self.stop_sound();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn muted_media() -> Media {
+        Media {
+            config: Config {
+                trigger_card: String::new(),
+                photo_directory: None,
+                albums: BTreeMap::new(),
+                sound_file: PathBuf::from("unused.wav"),
+                sound_enabled: false,
+                enable_amplifier: false,
+                slide_seconds: 5,
+                session_seconds: 60,
+                sound_timeout_seconds: 3,
+            },
+            albums: BTreeMap::from([("Album A".into(), vec![]), ("Album B".into(), vec![])]),
+            active_album: None,
+            sound: None,
+            triggered: None,
+            slideshow: None,
+            last_slide: None,
+            _amplifier: None,
+        }
+    }
+
+    #[test]
+    fn only_accepted_album_actions_request_feedback() {
+        let mut media = muted_media();
+        assert!(!media.tap("Unknown"));
+        assert!(media.triggered.is_none());
+        assert!(media.tap("Album A"));
+        assert!(media.sound.is_none());
+        assert!(media._amplifier.is_none());
+        assert!(!media.tap("Album B"));
+        assert!(!media.scan("Album B"));
+        assert_eq!(media.active_album.as_deref(), Some("Album A"));
+        media.triggered = Some(Instant::now() - Duration::from_secs(3));
+        assert!(!media.scan("Album A")); // Held QR: no repeated beep/restart.
+        assert!(media.scan("Album B"));
+        assert_eq!(media.active_album.as_deref(), Some("Album B"));
+        media.triggered = Some(Instant::now() - Duration::from_secs(3));
+        assert!(media.tap("Album B")); // A deliberate NFC re-tap may restart.
     }
 }

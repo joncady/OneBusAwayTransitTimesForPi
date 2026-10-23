@@ -1,6 +1,6 @@
 # Transit Times for Pi & PROXmobil3
 
-Live rail and bus arrivals from OneBusAway, with card-triggered photo albums on
+Live rail and bus arrivals from OneBusAway, with card- and QR-triggered photo albums on
 an upcycled PROXmobil3 transit terminal. The original Raspberry Pi browser kiosk
 is also included.
 
@@ -36,19 +36,30 @@ happens after the recording ends.
   cooldown. The display returns to arrivals when the photo session ends.
 - Arrange photos on your computer, then sync resized copies to the USB drive.
   Original photos stay on your computer; no photo server or extra Pi is required.
-- Audio is disabled by default. Known cards use private, salted local fingerprints;
+- The PM3 interface uses transit cards and QR codes; touchscreen support is out of scope.
+- The card-target ready light changes briefly when a card is recognized, then
+  returns to ready; the user verified the left-to-right feedback.
+- The built-in QR scanner successfully decoded a test code from a phone. QR
+  album triggers selected two distinct albums successfully in physical phone tests. Printable labels are prepared; printed-label and reconnect checks remain open; see [setup](pm3/README.md#prepare-qr-album-triggers-locally) and [the trial results](docs/pm3-qr-and-albums-2026-10-21.md).
+- The reader buzzer confirms accepted card/QR album actions when enabled; both
+  paths were physically verified with clean sound. Amplified
+  WAV audio remains disabled by default. Known cards use private, salted local fingerprints;
   the app does not perform fare transactions or infer the issuing agency.
 
-**Deployment is currently a bounded prototype session**, normally one hour.
-Permanent startup, full OS recovery images and PM3 power scheduling remain pending.
+**Default deployment is a bounded prototype session**, normally one hour,
+configurable up to 24 hours. An [opt-in automatic startup service](pm3/README.md#automatic-startup-opt-in)
+runs continuously; automatic launch was verified on two physical cold boots, with immediate
+arrivals on the latest boot. Initial network failures now retry after five seconds. LCD timeout/wake
+scheduling remains pending.
 The Pi schedule does not apply to the PM3.
 
 | Pending capability | Status |
 | --- | --- |
 | Japanese FeliCa cards | Paused pending a compatible discovery interface; [backlog issue #2](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/2) |
-| Audio | Muted; amplifier pop unresolved |
-| QR scanner | Deferred after an unsuccessful trial; not integrated |
-| Touch input | No usable controller exposed on the inspected PM3 |
+| Audio | Reader confirmation beep implemented; amplified WAV audio off; [playback sequencing follow-up #8](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/8) |
+| QR album triggers | Scanner decode confirmed; [album mapping and printable labels #3](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/3) phone-to-album selection verified; printed-label/reconnect checks pending |
+| LCD timeout / scheduled wake | [Tracked in #4](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/4); PM3 backlight remains on |
+| Automatic startup / crash recovery | [Tracked in #5](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/5); automatic boot launch and arrival recovery verified; remaining recovery checks open |
 
 ## Private configuration
 
@@ -104,6 +115,17 @@ ssh "$PM3_TARGET" '/init/transit-prototype/restart-display.sh 3600 live'
 ssh "$PM3_TARGET" 'systemctl stop transit-prototype.service'
 ```
 
+For overnight shutdown, shut down Linux before disconnecting PoE:
+
+```sh
+ssh "$PM3_TARGET" 'systemctl poweroff'
+```
+
+Allow shutdown to complete before unplugging; the LCD may remain illuminated.
+Without automatic startup installed, reconnect power, wait for SSH, and use
+`restart-display.sh` above to start the app. Automatic startup is tracked as a [backlog item](BACKLOG.md#automatic-startup-and-restart-recovery).
+LCD timeout, weekday wake scheduling and card wake are also [tracked](BACKLOG.md#lcd-timeout-overnight-schedule-and-wake).
+
 Build only with `./pm3/build.sh`. Existing tests are opt-in with `--test`.
 For sample mode, card enrollment/naming, albums and recovery, follow the
 [complete PM3 process](pm3/README.md).
@@ -130,6 +152,26 @@ up to 32 mapped albums and 512 photos per album. Do not remove USB bootstrap fil
 
 See [album setup and controls](pm3/README.md#arrange-albums-on-your-development-computer)
 for the initial action-file command, preparation-only mode and timing settings.
+
+## QR album labels (local preparation)
+
+Generate private codes for your Desktop album folders without connecting to the device:
+
+```sh
+.venv-media/bin/python -m pip install -r pm3/requirements-qr.txt
+.venv-media/bin/python pm3/generate-qr-labels.py
+```
+
+Open ignored `pm3/qr.local/labels.html` to print, or show an album PNG on a phone.
+Stable random tokens map to albums through ignored `pm3/qr.local.json`; personal
+album names and card identifiers are not encoded. Existing NFC album mappings
+remain usable. QR-only albums are supported by the sync tool with `--qr-file`.
+
+The opt-in native scanner integration is deployed, with the scanner connected;
+physical album/label verification is pending. For another device or an update,
+wait until it is powered and accessible before deploying with
+`./pm3/deploy-qr.sh "$PM3_TARGET" 3600`. This helper preserves current on-device
+transit, card and photo settings. Follow the [full QR process and acceptance checklist](pm3/README.md#prepare-qr-album-triggers-locally).
 
 ## Raspberry Pi version
 

@@ -22,11 +22,17 @@ pub struct Settings {
     pub mode: String,
     pub timezone: String,
     pub refresh_seconds: u64,
+    #[serde(default = "default_startup_retry_seconds")]
+    pub startup_retry_seconds: u64,
     pub page_seconds: u64,
     pub stale_after_seconds: u64,
     pub max_cache_age_seconds: u64,
     pub max_backoff_seconds: u64,
     base_url: String,
+}
+
+fn default_startup_retry_seconds() -> u64 {
+    5
 }
 
 #[derive(Clone, Deserialize)]
@@ -97,6 +103,7 @@ impl Prepared {
             .parse::<Tz>()
             .map_err(|_| "unknown display timezone")?;
         if !(10..=3600).contains(&settings.refresh_seconds)
+            || !(1..=60).contains(&settings.startup_retry_seconds)
             || !(3..=120).contains(&settings.page_seconds)
             || settings.stale_after_seconds < settings.refresh_seconds
             || settings.stale_after_seconds > 7200
@@ -159,11 +166,13 @@ impl Prepared {
         let mode = self.config.modes[&self.settings.mode].clone();
         let (sender, receiver) = mpsc::sync_channel(1);
         let refresh = self.settings.refresh_seconds;
+        let startup_retry = self.settings.startup_retry_seconds;
         let max_backoff = self.settings.max_backoff_seconds;
         let base = self.settings.base_url.clone();
         let worker_mode = mode.clone();
         let worker = thread::spawn(move || {
             let mut failures = 0u32;
+            let mut has_succeeded = false;
             loop {
                 if crate::STOP.load(Ordering::Relaxed) {
                     break;
@@ -176,13 +185,23 @@ impl Prepared {
                     self.config.max_arrivals,
                 );
                 failures = if result.is_ok() {
+                    has_succeeded = true;
                     0
                 } else {
                     failures.saturating_add(1)
                 };
-                let delay = refresh
-                    .saturating_mul(1u64 << failures.min(6))
-                    .min(max_backoff);
+                // Render immediately at boot; recover quickly when DHCP/DNS is
+                // still settling. After first success retain the usual API backoff.
+                let delay = if has_succeeded {
+                    refresh
+                        .saturating_mul(1u64 << failures.min(6))
+                        .min(max_backoff)
+                } else {
+                    startup_retry
+                        .saturating_mul(1u64 << failures.saturating_sub(1).min(6))
+                        .min(60)
+                        .min(max_backoff)
+                };
                 if sender.try_send(result).is_err() && crate::STOP.load(Ordering::Relaxed) {
                     break;
                 }

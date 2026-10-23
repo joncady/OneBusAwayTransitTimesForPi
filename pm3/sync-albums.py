@@ -13,6 +13,8 @@ import tempfile
 import uuid
 import warnings
 
+from qr_config import load as load_qr_config, valid_label
+
 try:
     from PIL import Image, ImageOps
 except ImportError:
@@ -53,14 +55,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('target', nargs='?', help='SSH destination, e.g. root@device-host')
     parser.add_argument('--source', type=Path, default=Path.home() / 'Desktop' / 'Transit Albums')
+    parser.add_argument('--qr-file', type=Path, help='private QR config permitting QR-only album folders')
     parser.add_argument('--prepare-only', action='store_true', help='prepare locally; do not connect or upload')
     args = parser.parse_args()
     if not args.prepare_only and not args.target:
         parser.error('target is required unless --prepare-only is used')
+    qr_labels = set()
+    if args.qr_file:
+        qr_config = load_qr_config(args.qr_file.expanduser())
+        qr_labels = set(qr_config['albums'].values())
     source = args.source.expanduser().resolve(strict=True)
     folders = sorted((p for p in source.iterdir() if p.is_dir() and not p.is_symlink() and not p.name.startswith('.')), key=lambda p: p.name.casefold())
     if len(folders) > 32:
-        raise ValueError('Use at most 32 album folders (one per saved card label).')
+        raise ValueError('Use at most 32 album folders (saved card labels or configured QR albums).')
     local = ROOT / 'albums.local'
     local.mkdir(mode=0o700, exist_ok=True)
     os.chmod(local, 0o700)
@@ -74,8 +81,8 @@ def main():
         staged.mkdir()
         for folder in folders:
             label = folder.name
-            if not label.strip() or len(label) > 32 or any(ord(c) < 32 or ord(c) == 127 for c in label):
-                raise ValueError('Each album folder must use a valid saved card label, at most 32 characters.')
+            if not valid_label(label):
+                raise ValueError('Each album folder must use a valid album label, at most 32 characters.')
             photos = sorted((p for p in folder.rglob('*') if p.is_file() and not p.is_symlink()
                              and p.suffix.lower() in SUPPORTED
                              and not any(part.startswith('.') for part in p.relative_to(folder).parts)),
@@ -93,7 +100,7 @@ def main():
             manifest[label] = f'{destination}/{album_id}'
             counts[label] = len(photos)
         if not manifest:
-            raise ValueError('No photos found. Add photos inside folders named after saved card labels.')
+            raise ValueError('No photos found. Add photos inside folders named after card labels or configured QR albums.')
         total = sum(counts.values())
         print(f'Prepared {total} photos in {len(manifest)} albums; originals untouched.', flush=True)
         if args.prepare_only:
@@ -102,14 +109,16 @@ def main():
             (preview / 'albums.json').write_text(json.dumps(counts, indent=2) + '\n')
             print(f'Prepared copies: {preview}')
             return
-        # Confirm every folder is enrolled before transferring private photos.
+        if qr_labels - set(manifest):
+            raise ValueError('A QR-mapped album has no prepared photos; add photos or update the private QR map.')
+        # Confirm every folder is enrolled or explicitly mapped for QR before upload.
         labels = ssh(args.target, f'{REMOTE}/prototype --cards-file {REMOTE}/cards.local.json --list-cards',
                      stdout=subprocess.PIPE).stdout.decode()
         enrolled = {line.rsplit(': ', 1)[0] for line in labels.splitlines() if ': ' in line}
-        if set(manifest) - enrolled:
-            raise ValueError('An album folder does not match an enrolled card label; rename it before syncing.')
+        if set(manifest) - enrolled - qr_labels:
+            raise ValueError('An album folder is neither an enrolled card label nor an album in --qr-file.')
         ssh(args.target, f'test -x {REMOTE}/restart-display.sh && '
-            f'systemctl is-active --quiet transit-prototype.service && grep -q " /init/efad/mp_sd " /proc/mounts')
+            f'(systemctl is-active --quiet transit-display.service || systemctl is-active --quiet transit-prototype.service) && grep -q " /init/efad/mp_sd " /proc/mounts')
         action = json.loads(ssh(args.target, f'cat {REMOTE}/actions.local.json', stdout=subprocess.PIPE).stdout)
         action.pop('triggerCard', None)
         action.pop('photoDirectory', None)
@@ -129,7 +138,7 @@ def main():
         ssh(args.target, f'cp -p {REMOTE}/actions.local.json {REMOTE}/actions.local.json.previous && '
             f'mv {REMOTE}/actions.local.json.new {REMOTE}/actions.local.json && '
             f'{REMOTE}/restart-display.sh 3600 live')
-        ssh(args.target, 'systemctl is-active --quiet transit-prototype.service')
+        ssh(args.target, 'systemctl is-active --quiet transit-display.service || systemctl is-active --quiet transit-prototype.service')
         report = local / 'last-sync.json'
         report.write_text(json.dumps({'source': str(source), 'release': release, 'counts': counts}, indent=2) + '\n')
         os.chmod(report, 0o600)

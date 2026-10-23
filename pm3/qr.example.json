@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "enabled": false,
+  "device": "/dev/ttyUSB0",
+  "cooldownMs": 2000,
+  "frameGapMs": 150,
+  "reconnectSeconds": 5,
+  "albums": {
+    "0123456789abcdef0123456789abcdef": "<saved card label or album name>"
+  }
+}

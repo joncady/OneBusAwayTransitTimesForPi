@@ -3,6 +3,7 @@ mod felica_trial;
 mod framebuffer;
 mod ipp;
 mod media;
+mod qr;
 mod reader;
 mod transit;
 
@@ -114,8 +115,12 @@ impl Platform for DisplayPlatform {
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
     let mut seconds = 600u64;
+    let mut continuous = false;
     let mut probe = false;
     let mut reader_lights = false;
+    let mut reader_buzzer = false;
+    let mut buzzer_frequency = 1536u16;
+    let mut buzzer_duration_ms = 256u16;
     let mut ready_light_mask = 0x40u32;
     let mut tap_light_mask = 0x80u32;
     let mut tap_light_ms = 1000u64;
@@ -126,6 +131,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut list_cards = false;
     let mut name_card = None::<(String, String)>;
     let mut media_path = None::<String>;
+    let mut qr_path = None::<String>;
     let mut transit_path = None::<String>;
     let mut display_path = None::<String>;
     let mut env_path = None::<String>;
@@ -135,6 +141,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
+            "--continuous" => continuous = true,
             "--seconds" => {
                 i += 1;
                 seconds = args.get(i).ok_or("missing seconds")?.parse()?;
@@ -148,6 +155,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                 font = args.get(i).ok_or("missing font path")?.clone();
             }
             "--reader-lights" => reader_lights = true,
+            "--reader-buzzer" => reader_buzzer = true,
+            "--buzzer-frequency" | "--buzzer-duration-ms" => {
+                let option = args[i].clone();
+                i += 1;
+                let value = args.get(i).ok_or("missing buzzer value")?;
+                if option == "--buzzer-frequency" {
+                    buzzer_frequency = value.parse()?;
+                } else {
+                    buzzer_duration_ms = value.parse()?;
+                }
+            }
             "--ready-light-mask" | "--tap-light-mask" | "--tap-light-ms" => {
                 let option = args[i].clone();
                 i += 1;
@@ -192,6 +210,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             "--check-config" => check_config = true,
+            "--qr-file" => {
+                i += 1;
+                qr_path = Some(args.get(i).ok_or("missing QR configuration path")?.clone());
+            }
             "--actions-file" => {
                 i += 1;
                 media_path = Some(args.get(i).ok_or("missing actions path")?.clone());
@@ -204,7 +226,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             "--help" => {
                 println!(
-                    "pm3-transit-prototype [--seconds 600] [--probe-reader] [--enable-card-detection] [--reader PATH] [--font PATH] [--cards-file PATH] [--actions-file PATH] [--transit-file PATH --display-file PATH --env-file PATH] [--check-config] [--reader-lights] [--ready-light-mask 64] [--tap-light-mask 128] [--tap-light-ms 1000] [--list-cards | --name-card OLD NEW]\nPrivate diagnostics: [--reader-info-file PATH] [--felica-trial-file NEW_PRIVATE_PATH]"
+                    "pm3-transit-prototype [--seconds 600 | --continuous] [--probe-reader] [--enable-card-detection] [--reader PATH] [--font PATH] [--cards-file PATH] [--actions-file PATH] [--qr-file PATH] [--transit-file PATH --display-file PATH --env-file PATH] [--check-config] [--reader-lights] [--reader-buzzer] [--buzzer-frequency 1536] [--buzzer-duration-ms 256] [--ready-light-mask 64] [--tap-light-mask 128] [--tap-light-ms 1000] [--list-cards | --name-card OLD NEW]\nPrivate diagnostics: [--reader-info-file PATH] [--felica-trial-file NEW_PRIVATE_PATH]"
                 );
                 return Ok(());
             }
@@ -219,9 +241,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         || !matches!(tap_light_mask, 0 | 64 | 128 | 192)
         || !(100..=5000).contains(&tap_light_ms)
     {
-        return Err("light masks must be 0, 64, 128 or 192; tap duration must be 100..5000 ms".into());
+        return Err(
+            "light masks must be 0, 64, 128 or 192; tap duration must be 100..5000 ms".into(),
+        );
     }
-    let mut registry = cards_path.map(cards::Registry::open).transpose()?;
+    if !(100..=5000).contains(&buzzer_frequency) || !(20..=1000).contains(&buzzer_duration_ms) {
+        return Err("buzzer frequency must be 100..5000 Hz and duration 20..1000 ms".into());
+    }
+    let mut registry = if check_config {
+        None
+    } else {
+        cards_path.map(cards::Registry::open).transpose()?
+    };
     if list_cards || name_card.is_some() {
         let registry = registry
             .as_mut()
@@ -239,14 +270,37 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     let prepared = match (transit_path, display_path, env_path) {
-        (None, None, None) if !check_config => None,
+        (None, None, None) if !check_config || qr_path.is_some() => None,
         (Some(transit), Some(display), Some(env)) => {
             Some(transit::Prepared::load(&transit, &display, &env)?)
         }
         _ => return Err("supply --transit-file, --display-file, and --env-file together".into()),
     };
+    let qr_config = match qr_path.as_deref().map(qr::Config::load).transpose() {
+        Ok(config) => config,
+        Err(_) if check_config => return Err("QR configuration invalid or unreadable".into()),
+        Err(_) => {
+            eprintln!("QR input disabled: configuration invalid or unreadable");
+            None
+        }
+    };
     if check_config {
-        println!("Transit, display, and API key configuration valid");
+        if let Some(config) = qr_config.as_ref() {
+            if let Some(path) = media_path.as_deref() {
+                let labels = media::configured_labels(path)
+                    .map_err(|_| "Media configuration invalid or unreadable")?;
+                if config
+                    .album_labels()
+                    .any(|label| !labels.iter().any(|l| l == label))
+                {
+                    return Err("QR mapping references an unconfigured media album".into());
+                }
+            }
+            println!("QR configuration valid");
+        }
+        if prepared.is_some() {
+            println!("Transit, display, and API key configuration valid");
+        }
         return Ok(());
     }
     unsafe {
@@ -260,6 +314,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             eprintln!("Media disabled: {error}");
             None
         }
+    });
+    let mut qr = qr_config.and_then(|config| {
+        config.start(|label| media.as_ref().is_some_and(|m| m.has_album(label)))
     });
     let start = Instant::now();
     let mut nfc = match reader::Reader::open(&serial) {
@@ -309,6 +366,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut render_count = 0u64;
     let mut render_time = Duration::ZERO;
     let mut last_card = None::<Instant>;
+    let mut last_qr = None::<Instant>;
     let mut tap_light_until = None::<Instant>;
     let mut current_light = None::<u32>;
     let mut last_uid = None::<Vec<u8>>;
@@ -322,10 +380,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         .map(felica_trial::Capture::open)
         .transpose()?;
     println!(
-        "Prototype started: duration={seconds}s, framebuffer={}, card_detection={enable_cards}",
+        "Prototype started: duration={seconds}s, continuous={continuous}, framebuffer={}, card_detection={enable_cards}",
         !probe
     );
-    while start.elapsed() < Duration::from_secs(seconds) && !STOP.load(Ordering::Relaxed) {
+    while (continuous || start.elapsed() < Duration::from_secs(seconds))
+        && !STOP.load(Ordering::Relaxed)
+    {
+        let mut album_triggered = false;
         if let Some(port) = nfc.as_mut() {
             for message in port.poll()? {
                 messages += 1;
@@ -425,7 +486,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                             Instant::now() + Duration::from_millis(tap_light_ms),
                                         );
                                         if let Some(media) = media.as_mut() {
-                                            media.tap(&label);
+                                            album_triggered |= media.tap(&label);
                                         }
                                         label
                                     }
@@ -443,10 +504,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                                                 "Experimental card label: {label}, newly_enrolled={enrolled}"
                                             );
                                             tap_light_until = Some(
-                                                Instant::now() + Duration::from_millis(tap_light_ms),
+                                                Instant::now()
+                                                    + Duration::from_millis(tap_light_ms),
                                             );
                                             if let Some(media) = media.as_mut() {
-                                                media.tap(&label);
+                                                album_triggered |= media.tap(&label);
                                             }
                                             format!("{label} (experimental)")
                                         }
@@ -497,6 +559,25 @@ fn main() -> Result<(), Box<dyn Error>> {
                 last_ping = Instant::now();
             }
         }
+        if let Some(label) = qr.as_mut().and_then(qr::Scanner::poll) {
+            if media.as_mut().is_some_and(|m| m.scan(&label)) {
+                album_triggered = true;
+                last_qr = Some(Instant::now());
+                tap_light_until = Some(Instant::now() + Duration::from_millis(tap_light_ms));
+                last_second = u64::MAX;
+                println!("QR album action triggered");
+            }
+        }
+        if album_triggered && reader_buzzer {
+            if let Some(port) = nfc.as_mut() {
+                if let Err(error) = port.beep(buzzer_frequency, buzzer_duration_ms) {
+                    eprintln!("Reader buzzer disabled after UART error: {error}");
+                    reader_buzzer = false;
+                } else {
+                    println!("Reader album confirmation beep sent");
+                }
+            }
+        }
         slint::platform::update_timers_and_animations();
         if let (Some(media), Some(ui)) = (media.as_mut(), ui.as_ref()) {
             if let Some((active, image)) = media.tick() {
@@ -524,8 +605,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
                 let active =
                     last_card.is_some_and(|previous| previous.elapsed() < Duration::from_secs(4));
-                ui.set_card_active(active);
-                ui.set_reader_status(if active {
+                let qr_active = last_qr.is_some_and(|previous| {
+                    previous.elapsed() < Duration::from_secs(4)
+                        && last_card.is_none_or(|card| previous > card)
+                });
+                ui.set_card_active(active || qr_active);
+                ui.set_reader_status(if qr_active {
+                    "QR album detected".into()
+                } else if active {
                     format!("{last_card_label} detected / tap {cards}").into()
                 } else if felica_capture.as_ref().is_some_and(|capture| capture.ready) {
                     "FeliCa trial ready / tap a Japanese card".into()

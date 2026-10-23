@@ -22,7 +22,7 @@ ssh -o BatchMode=yes "$PM3_TARGET" '
     echo "Stock fare software is running; stop and review before using this prototype." >&2
     exit 1
   fi
-  if systemctl is-active --quiet transit-prototype.service; then
+  if systemctl is-active --quiet transit-prototype.service || systemctl is-active --quiet transit-display.service; then
     echo "Prototype service is already running." >&2
     exit 1
   fi
@@ -54,7 +54,7 @@ ssh -o BatchMode=yes "$PM3_TARGET" "
 "
 ssh -o BatchMode=yes "$PM3_TARGET" '
   sleep 1
-  if ! systemctl is-active --quiet transit-prototype.service; then
+  if ! systemctl is-active --quiet transit-prototype.service && ! systemctl is-active --quiet transit-display.service; then
     cat /init/transit-prototype/prototype.log >&2
     exit 1
   fi

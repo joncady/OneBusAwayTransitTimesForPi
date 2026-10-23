@@ -85,3 +85,10 @@ backups; authenticated arrivals refreshed. Audio remains disabled, with amplifie
 state 0. This session runs for 24 hours; permanent boot startup remains pending.
 LEDs switch off on graceful exit. No firmware, scanner power or security settings
 were changed.
+
+### Audio isolation follow-up — October 22
+
+- The documented reader buzzer command (`0x22`) produced a clean beep with the Linux audio amplifier off. The owner confirmed that it matches the startup beep; the exact boot-time caller remains unconfirmed.
+- Playing an all-zero PCM WAV with the amplifier already enabled still produced a pop. The recording has a large transient at 7.855 seconds, about 5.1 seconds after a much smaller transient, consistent with the separated amp-on/playback-start sequence. This implicates stream startup rather than requiring a defect in the chime samples; it does not establish the electrical cause.
+- A final manual trial opened one continuous 44.1 kHz mono PCM16 stream with the amplifier off, enabled the amplifier after three seconds, played the existing chime after six seconds of leading silence, and disabled the amplifier before the stream closed. The owner reported clean sound. The recording contains the tone and other isolated transients, so it is not proof that all switching noise is eliminated.
+- No application audio behavior was changed. The amplifier was restored to off, with the transit service still active. A future implementation needs an asynchronous playback lifecycle that keeps the stream open across sounds or safely sequences amplifier state, plus repeated-tap, failure, and restart validation. Track this in GitHub issue #8.

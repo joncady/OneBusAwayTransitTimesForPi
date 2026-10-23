@@ -1,6 +1,6 @@
 # PM3 references
 
-Checked 2026-10-21. Hardware versions and direct observations take precedence
+Reference research checked 2026-10-21; local evidence updated 2026-10-22. Hardware versions and direct observations take precedence
 over examples for another product variant. External pages are references, not
 deployment scripts to execute unchanged.
 
@@ -27,7 +27,8 @@ deployment scripts to execute unchanged.
   card-triggered albums or FeliCa support.
 - [bettse/PROXmobil3_trimet](https://github.com/bettse/PROXmobil3_trimet): native
   TriMet board; the author describes watchdog handling and QR stop selection.
-  This does not establish the scanner works on our unit.
+  Our unit separately decoded a known QR in the 2026-10-22 passive trial;
+  QR album integration is prepared locally, pending physical verification.
 - [checkraisefold/rust-feig-app](https://github.com/checkraisefold/rust-feig-app):
   community host/cVEND IPP analysis. The inspected Rust sources have no FeliCa
   implementation or NFC-F references.
@@ -46,9 +47,10 @@ installed PM3/cVEND combination; this is not a claim that none exists.
 ## Project evidence
 
 - [Hardware/software audit](../docs/pm3-audit-2026-10-21.md).
+- [Touchscreen findings (archived, not planned)](../docs/pm3-touchscreen-2026-10-22.md).
 - [Native prototype measurements](../docs/pm3-prototype-results-2026-10-21.md).
 - [Live-arrivals and slideshow integration](../docs/pm3-live-integration-2026-10-21.md).
-- [Albums and deferred QR work](../docs/pm3-qr-and-albums-2026-10-21.md).
+- [Albums, successful QR validation and local album integration](../docs/pm3-qr-and-albums-2026-10-21.md).
 - [Japanese-card investigation](../docs/pm3-japanese-cards-2026-10-21.md).
 - [Parallel research and pause/resume criteria](../docs/pm3-felica-parallel-research.md).
 - [Unsent legacy SDK inquiry](../docs/pm3-felica-sdk-inquiry.md).
