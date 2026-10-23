@@ -57,7 +57,7 @@ On the development machine, retain the existing private `config/transit.json` an
 ./pm3/deploy-live.sh root@<device-host> 3600
 ```
 
-This compiles without running tests, prepares ignored `pm3/runtime.local/` settings, transfers only API_KEY from `.env`, validates the incoming configuration before stopping the current prototype, and launches a one-hour transient service. Existing card aliases, photo action, USB bootstrap and boot settings are preserved. The previous binary and existing transit/display/API files get `.previous` copies on-device. These are limited deployment rollback copies, not full recovery backups. Failed validation leaves the current prototype running. A transfer/startup failure after stopping it still requires manual recovery; this is not a transactional deployment system.
+This compiles without running tests, prepares ignored `pm3/runtime.local/` settings and transfers only API_KEY from `.env`. Shared activation validates incoming configuration before stopping the app, snapshots the prior compatible executable/launchers/configuration, and restores that set on failed activation. It restarts the continuous service when installed; otherwise it launches a bounded live session. Existing card aliases, photo actions, USB bootstrap and boot settings are preserved. Full disk recovery remains separate; see [maintenance and recovery](../docs/pm3-maintenance.md).
 
 To reuse an already compiled binary, append `--skip-build`. To change the interval, selected train/bus mode, paging, timezone, cache lifetime or error backoff, edit ignored `pm3/runtime.local/display.json` and redeploy. It is created from `display.example.json` on first deployment and preserved thereafter. Stops continue to come from `config/transit.json`. A station changed only on the device is replaced by that local config on the next deployment. Both JSON contracts reject unknown fields and validate bounds on load. Settings currently apply at restart; there is no settings web server or working touchscreen control.
 
@@ -73,7 +73,7 @@ SSH key access must already work. Leave the working USB bootstrap attached initi
 
 ```sh
 ./pm3/run-prototype.sh root@<device-host> 600
-ssh root@<device-host> 'cat /init/transit-prototype/prototype.log'
+ssh root@<device-host> 'journalctl -u transit-prototype.service -u transit-display.service -n 50 --no-pager'
 ```
 
 The script refuses to launch while stock fare services or a previous prototype process are present. Persistent files go only into `/init/transit-prototype`, including the private `cards.local.json` alias registry. By default it launches a temporary systemd service for the specified number of seconds, with an additional runtime limit. This survives SSH session cleanup and installs no boot service. If automatic startup is already installed, live mode uses the continuous persistent service instead. SSH host-key checking remains enabled. Use the private host address outside this repository.
@@ -345,8 +345,9 @@ setting. Repeated scans of the already-active album do not restart its session;
 NFC re-taps retain their existing restart behavior. A continuously presented code
 can open another session after the current one ends, so remove it after scanning.
 QR actions also request tap light feedback if reader lights are enabled.
-Unavailable media mappings are skipped at startup; restart after restoring USB
-media or changing configuration. Amplified WAV audio stays disabled unless you explicitly
+Configured mappings survive missing USB folders at startup. Each accepted input
+re-indexes its requested folder, so restored media works on the next request
+without a restart. Restart after changing configuration. Amplified WAV audio stays disabled unless you explicitly
 change the existing action settings. Scanning an unknown QR never opens a URL or
 executes a command.
 
@@ -388,13 +389,13 @@ without opening serial ports or playing audio using `--check-config --qr-file PA
 as well. The existing action file must contain every QR-mapped label, even if
 scanning is disabled.
 
-The helper saves `prototype.before-qr`, `restart-display.before-qr.sh`,
-`start-display.before-qr.sh` (if present) and, if
-present, `qr.before-qr.local.json`. If immediate startup fails, it attempts to
-restore them and restart the previous app. It is not a power-failure-atomic
-upgrade or a full recovery backup. For manual rollback, stop the service, restore
-the compatible app/launcher/map set (remove `qr.local.json` if previously absent),
-then use the restored `restart-display.sh`. Never overwrite a running binary.
+The helper uses the shared deployment activation path. It saves the prior compatible
+app, launchers and configuration in a private managed snapshot before stopping
+the working app, with rollback for failed activation. Use
+`./pm3/rollback-update.sh "$PM3_TARGET"` to restore the last-good snapshot.
+Retention protects its referenced media. This does not replace full recovery
+images or provide atomicity across sudden power loss; see
+[maintenance and recovery](../docs/pm3-maintenance.md).
 
 Physical acceptance checklist (two distinct phone-to-album selections have passed):
 
@@ -514,3 +515,12 @@ bounded session again. For emergency recovery without deleting files, stop and
 disable `transit-display.service` and remove `/init/transit-prototype/autostart.enabled`.
 Power management/LCD timeout is a separate feature; this service does not turn
 the backlight off on a schedule.
+
+## Maintenance
+
+See [maintenance and recovery](../docs/pm3-maintenance.md) for preserving app
+updates, compatible rollback, verified private backups, storage retention and
+network/media recovery checks. Normal updates and photo sync keep the newest
+three histories plus every referenced active/rollback version. Card identities,
+bootstrap and recovery images are never pruned. Both service modes use the
+bounded system journal.

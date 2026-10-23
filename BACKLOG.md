@@ -13,9 +13,20 @@ checkpoints and implementation context; use the issues for current task tracking
 - [Reliable system time, timezone and clock recovery — #7](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/7)
 - [Investigate speaker pop before re-enabling audio — #8](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/8)
 - [Validate card identity and offline/media failure recovery — #9](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/9)
-- [Bound log growth and retained media releases — #10](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/10)
+- [Bound log growth and retained media releases — #10, completed](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/10)
 - [Prefetch slideshow images without blocking the UI — #11](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/11)
 - [Optional LAN album hosting and remote photo management — #13](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/13)
+
+### Maintenance checkpoint — 2026-10-22
+
+- #6: compatible deployment rollback implemented and tested on-device; saved
+  images verified and restored to regular files. Physical restore/boot remains open.
+- #9: missing-at-boot media can recover on the next request; synthetic cache,
+  partial-stop and media-failure tests passed. On-device startup API outage/recovery
+  passed with private configuration preserved. Physical media/power-cycle cases remain.
+- #10: bounded journal logs, protected release/snapshot retention and automatic
+  cleanup after deployment/sync implemented. Disposable on-device pruning/log-cap
+  tests passed. See [maintenance evidence and commands](docs/pm3-maintenance.md).
 
 ### Out of scope
 

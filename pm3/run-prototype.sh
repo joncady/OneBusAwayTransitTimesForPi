@@ -55,8 +55,8 @@ ssh -o BatchMode=yes "$PM3_TARGET" "
 ssh -o BatchMode=yes "$PM3_TARGET" '
   sleep 1
   if ! systemctl is-active --quiet transit-prototype.service && ! systemctl is-active --quiet transit-display.service; then
-    cat /init/transit-prototype/prototype.log >&2
+    journalctl -u transit-prototype.service -u transit-display.service -n 30 --no-pager >&2
     exit 1
   fi
 '
-echo "Prototype launched for $PM3_DURATION seconds. Log: /init/transit-prototype/prototype.log"
+echo "Prototype launched for $PM3_DURATION seconds. Logs: journalctl -u transit-prototype.service -u transit-display.service"

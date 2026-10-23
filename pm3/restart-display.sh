@@ -51,7 +51,7 @@ if systemctl is-active --quiet transit-display.service; then
 fi
 systemd-run --unit=transit-prototype --collect \
   --property="RuntimeMaxSec=$((PM3_DURATION + 10))" \
-  --property="StandardOutput=append:$PM3_HOME/prototype.log" \
+  --property=StandardOutput=journal \
   --property=StandardError=inherit "$PM3_HOME/prototype" "$@"
 systemctl show transit-prototype.service --property=MainPID --value > "$PM3_HOME/prototype.pid"
 sleep 1

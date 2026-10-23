@@ -100,7 +100,8 @@ pub struct Media {
 
 impl Media {
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let (config, directories) = load_config(path)?;
+        let (mut config, directories) = load_config(path)?;
+        config.albums = directories.clone();
         let mut albums = BTreeMap::new();
         for (label, directory) in directories {
             match photo_paths(&directory) {
@@ -109,9 +110,6 @@ impl Media {
                 }
                 Err(_) => eprintln!("Skipping an unavailable or empty photo album"),
             }
-        }
-        if albums.is_empty() {
-            return Err("no usable photo albums found".into());
         }
         println!("Media ready: {} albums", albums.len());
         let amplifier = if config.sound_enabled && config.enable_amplifier {
@@ -138,7 +136,7 @@ impl Media {
     }
 
     pub fn has_album(&self, label: &str) -> bool {
-        self.albums.contains_key(label)
+        self.config.albums.contains_key(label)
     }
 
     /// Repeated scanner output must not keep restarting the current slideshow.
@@ -151,15 +149,22 @@ impl Media {
 
     /// NFC and QR share the same action and two-second cross-input cooldown.
     pub fn tap(&mut self, label: &str) -> bool {
-        if !self.albums.contains_key(label) {
+        let Some(directory) = self.config.albums.get(label) else {
             return false;
-        }
+        };
         if self
             .triggered
             .is_some_and(|start| start.elapsed() < Duration::from_secs(2))
         {
             return false;
         }
+        // Re-index only on a requested action, not every frame. A USB album
+        // absent at boot or temporarily removed can recover on the next tap/scan.
+        let Ok(paths) = photo_paths(directory) else {
+            eprintln!("Requested album unavailable; keeping current view");
+            return false;
+        };
+        self.albums.insert(label.to_string(), paths);
         self.active_album = Some(label.to_string());
         self.stop_sound();
         self.triggered = Some(Instant::now());
@@ -358,11 +363,17 @@ mod tests {
     use super::*;
 
     fn muted_media() -> Media {
+        let root = std::env::temp_dir().join(format!("pm3-media-feedback-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("test.jpg"), b"synthetic invalid photo").unwrap();
         Media {
             config: Config {
                 trigger_card: String::new(),
                 photo_directory: None,
-                albums: BTreeMap::new(),
+                albums: BTreeMap::from([
+                    ("Album A".into(), root.clone()),
+                    ("Album B".into(), root),
+                ]),
                 sound_file: PathBuf::from("unused.wav"),
                 sound_enabled: false,
                 enable_amplifier: false,
@@ -397,5 +408,45 @@ mod tests {
         assert_eq!(media.active_album.as_deref(), Some("Album B"));
         media.triggered = Some(Instant::now() - Duration::from_secs(3));
         assert!(media.tap("Album B")); // A deliberate NFC re-tap may restart.
+        let root = media.config.albums["Album A"].clone();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+
+    #[test]
+    fn missing_boot_album_recovers_and_corrupt_photo_returns_to_arrivals() {
+        let root = std::env::temp_dir().join(format!("pm3-media-recovery-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir(&root).unwrap();
+        let directory = root.join("usb-album");
+        let config = root.join("actions.json");
+        fs::write(
+            &config,
+            serde_json::json!({
+                "albums": {"Test": directory}, "soundFile": "unused.wav",
+                "soundEnabled": false, "slideSeconds": 5, "sessionSeconds": 60,
+                "soundTimeoutSeconds": 3
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let mut media = Media::load(config.to_str().unwrap()).unwrap();
+        assert!(media.has_album("Test")); // QR mapping survives absent USB.
+        assert!(!media.tap("Test"));
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("photo.jpg"), b"invalid JPEG").unwrap();
+        assert!(media.scan("Test"));
+        assert!(matches!(media.tick(), Some((false, None))));
+        assert!(media.triggered.is_none());
+        fs::remove_dir_all(&directory).unwrap();
+        assert!(!media.tap("Test"));
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("replacement.jpg"), b"invalid JPEG").unwrap();
+        assert!(media.tap("Test"));
+        fs::remove_dir_all(root).unwrap();
     }
 }

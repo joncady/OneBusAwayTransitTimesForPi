@@ -285,10 +285,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
     if check_config {
+        let labels = media_path
+            .as_deref()
+            .map(media::configured_labels)
+            .transpose()
+            .map_err(|_| "Media configuration invalid or unreadable")?;
         if let Some(config) = qr_config.as_ref() {
-            if let Some(path) = media_path.as_deref() {
-                let labels = media::configured_labels(path)
-                    .map_err(|_| "Media configuration invalid or unreadable")?;
+            if let Some(labels) = labels.as_ref() {
                 if config
                     .album_labels()
                     .any(|label| !labels.iter().any(|l| l == label))

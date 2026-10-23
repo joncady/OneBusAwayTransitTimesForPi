@@ -232,3 +232,17 @@ checked credentials, personal stop values or QR tokens in candidate source/docs.
 Private media, token maps and recovery images remain ignored. These checks do
 not exercise printed labels, scanner reconnect or a cold boot of this newest
 QR/buzzer build; those remain tracked in issues #3 and #5.
+
+## Maintenance checkpoint — 2026-10-22
+
+Shared activation now snapshots a compatible app/configuration set and restores it
+on failed activation; both the deliberately failing on-device update and manual
+rollback passed. Live arrivals recovered after a controlled loopback API outage.
+Missing-at-boot album folders remain configured and re-index on requests, with
+invalid media returning to arrivals. Release/snapshot retention protects active
+and rollback references, and both launch modes use the bounded journal.
+
+See [maintenance evidence and commands](pm3-maintenance.md) for the 13 Rust tests,
+14 host tests, device retention rehearsal, image verification and remaining
+physical restore/power-cycle checks. These later results supersede the earlier
+limited-rollback and no-tests cleanup checkpoints above.

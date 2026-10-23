@@ -61,6 +61,13 @@ The Pi schedule does not apply to the PM3.
 | LCD timeout / scheduled wake | [Tracked in #4](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/4); PM3 backlight remains on |
 | Automatic startup / crash recovery | [Tracked in #5](https://github.com/joncady/OneBusAwayTransitTimesForPi/issues/5); automatic boot launch and arrival recovery verified; remaining recovery checks open |
 
+## Maintenance and recovery
+
+[Maintenance guide](docs/pm3-maintenance.md): compatible app/configuration rollback,
+private image verification and restore rehearsal, bounded logs/media history, and
+missing-media/API recovery. Automatic rollback and startup API recovery have been
+exercised on the terminal. Physical spare-card restore/boot remains unverified.
+
 ## Private configuration
 
 For a fresh checkout:

@@ -24,15 +24,21 @@ for unit in transit-display.service transit-prototype.service; do
   if systemctl is-active --quiet "$unit"; then was_active="$unit"; break; fi
 done
 readonly=0
+lock_held=0
+app_stopped=0
 cleanup() {
  trap - EXIT HUP INT TERM
  if [ "$readonly" = 1 ]; then mount -o remount,rw /init || true; fi
+ if [ "$lock_held" = 1 ]; then rmdir /init/transit-prototype/maintenance.lock || true; fi
+ if [ "$app_stopped" != 1 ]; then return; fi
  if [ "$was_active" = transit-display.service ]; then systemctl start "$was_active" || true;
  elif [ "$was_active" = transit-prototype.service ]; then /init/transit-prototype/restart-display.sh 3600 live || true; fi
 }
 trap cleanup EXIT
 trap 'exit 130' HUP INT TERM
-if [ -n "$was_active" ]; then systemctl stop "$was_active"; fi
+mkdir /init/transit-prototype/maintenance.lock
+lock_held=1
+if [ -n "$was_active" ]; then app_stopped=1; systemctl stop "$was_active"; fi
 sync
 mount -o remount,ro /init
 readonly=1
@@ -51,22 +57,7 @@ sync
 echo 'Images saved and gzip integrity checked; resuming app.'
 REMOTE
 ssh -o BatchMode=yes "$PM3_TARGET" "tar -cf - -C /init/efad/mp_sd/transit-recovery/$PM3_BACKUP_ID ." | tar -xf - -C "$PM3_LOCAL"
-python3 - "$PM3_LOCAL" <<'PY'
-import gzip, hashlib, pathlib, sys
-root = pathlib.Path(sys.argv[1])
-for line in (root / 'images.sha256').read_text().splitlines():
-    digest, name = line.split(None, 1)
-    path = root / pathlib.PurePosixPath(name.strip()).name
-    checksum = hashlib.sha256()
-    with path.open('rb') as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
-            checksum.update(chunk)
-    if checksum.hexdigest() != digest:
-        raise SystemExit('Recovery copy checksum mismatch')
-    with gzip.open(path, 'rb') as stream:
-        while stream.read(1024 * 1024): pass
-print('Local recovery copies match remote SHA-256 and pass gzip integrity checks.')
-PY
+python3 "$PM3_SOURCE_DIR/verify-recovery.py" "$PM3_LOCAL"
 chmod -R go-rwx "$PM3_LOCAL"
 echo "Private recovery copies: $PM3_LOCAL"
 echo 'Imaging/integrity checks are not a physical restore test.'

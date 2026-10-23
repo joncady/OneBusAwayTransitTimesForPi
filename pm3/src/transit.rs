@@ -192,16 +192,8 @@ impl Prepared {
                 };
                 // Render immediately at boot; recover quickly when DHCP/DNS is
                 // still settling. After first success retain the usual API backoff.
-                let delay = if has_succeeded {
-                    refresh
-                        .saturating_mul(1u64 << failures.min(6))
-                        .min(max_backoff)
-                } else {
-                    startup_retry
-                        .saturating_mul(1u64 << failures.saturating_sub(1).min(6))
-                        .min(60)
-                        .min(max_backoff)
-                };
+                let delay =
+                    retry_delay(refresh, startup_retry, max_backoff, failures, has_succeeded);
                 if sender.try_send(result).is_err() && crate::STOP.load(Ordering::Relaxed) {
                     break;
                 }
@@ -344,6 +336,17 @@ fn request(url: &str) -> Result<Response, &'static str> {
     result
 }
 
+fn retry_delay(refresh: u64, startup: u64, max: u64, failures: u32, succeeded: bool) -> u64 {
+    if succeeded {
+        refresh.saturating_mul(1u64 << failures.min(6)).min(max)
+    } else {
+        startup
+            .saturating_mul(1u64 << failures.saturating_sub(1).min(6))
+            .min(60)
+            .min(max)
+    }
+}
+
 fn clean(value: String, max: usize) -> String {
     value
         .chars()
@@ -359,6 +362,17 @@ fn fetch(
     window: u64,
     max: usize,
 ) -> Result<Snapshot, &'static str> {
+    fetch_with(base, key, mode, window, max, request)
+}
+
+fn fetch_with(
+    base: &str,
+    key: &str,
+    mode: &Mode,
+    window: u64,
+    max: usize,
+    mut request_fn: impl FnMut(&str) -> Result<Response, &'static str>,
+) -> Result<Snapshot, &'static str> {
     let mut arrivals = Vec::new();
     let mut seen = BTreeSet::new();
     let mut server_time = 0;
@@ -373,7 +387,7 @@ fn fetch(
             encode(&stop.id),
             encode(key)
         );
-        let response = request(&url)?;
+        let response = request_fn(&url)?;
         server_time = response.current_time;
         received = Instant::now();
         for item in response
@@ -553,10 +567,110 @@ impl Transit {
 
 impl Drop for Transit {
     fn drop(&mut self) {
-        crate::STOP.store(true, Ordering::Relaxed);
         // The active HTTPS child has a 12-second timeout; no orphan polling.
         if let Some(worker) = self.worker.take() {
+            crate::STOP.store(true, Ordering::Relaxed);
             let _ = worker.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn startup_and_later_backoff_are_bounded_and_reset() {
+        assert_eq!(retry_delay(60, 5, 600, 1, false), 5);
+        assert_eq!(retry_delay(60, 5, 600, 2, false), 10);
+        assert_eq!(retry_delay(60, 5, 600, 100, false), 60);
+        assert_eq!(retry_delay(60, 5, 600, 0, true), 60);
+        assert_eq!(retry_delay(60, 5, 600, 1, true), 120);
+        assert_eq!(retry_delay(60, 5, 600, 100, true), 600);
+    }
+
+    fn mode() -> Mode {
+        Mode {
+            name: "Test station".into(),
+            service_label: "Test".into(),
+            plural: "trains".into(),
+            stops: vec![
+                Stop {
+                    id: "test_1".into(),
+                    direction: "North".into(),
+                },
+                Stop {
+                    id: "test_2".into(),
+                    direction: "South".into(),
+                },
+            ],
+        }
+    }
+
+    fn response() -> Response {
+        serde_json::from_value(
+            serde_json::json!({"code": 200, "currentTime": 1792700000000_i64,
+            "data": {"entry": {"arrivalsAndDepartures": []}}}),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_partial_stop_failure_does_not_publish_a_partial_snapshot() {
+        let mut count = 0;
+        let result = fetch_with("https://example.test", "dummy", &mode(), 60, 10, |_| {
+            count += 1;
+            if count == 2 {
+                Err("Synthetic stop failure")
+            } else {
+                Ok(response())
+            }
+        });
+        assert!(result.is_err());
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn network_failure_preserves_cache_then_expires_and_recovers() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let settings: Settings =
+            serde_json::from_str(include_str!("../display.example.json")).unwrap();
+        let expiry = settings.max_cache_age_seconds;
+        let snapshot = || Snapshot {
+            arrivals: vec![Arrival {
+                route: "1".into(),
+                destination: "Test destination".into(),
+                direction: "North".into(),
+                timestamp: 1792700000000 + 600000,
+                predicted: true,
+            }],
+            server_time: 1792700000000,
+            received: Instant::now(),
+        };
+        let mut transit = Transit {
+            settings,
+            zone: chrono_tz::UTC,
+            mode: mode(),
+            receiver,
+            worker: None,
+            snapshot: None,
+            failed: false,
+            window: 60,
+        };
+        sender.send(Ok(snapshot())).unwrap();
+        assert_eq!(transit.board(0).rows.len(), 1);
+        sender.send(Err("Synthetic network outage")).unwrap();
+        let board = transit.board(0);
+        assert!(board.stale);
+        assert_eq!(board.rows.len(), 1);
+        transit.snapshot.as_mut().unwrap().received =
+            Instant::now() - Duration::from_secs(expiry + 1);
+        let board = transit.board(0);
+        assert!(board.rows.is_empty());
+        assert_eq!(board.clock, "--:--");
+        sender.send(Ok(snapshot())).unwrap();
+        let board = transit.board(0);
+        assert!(!board.stale);
+        assert_eq!(board.rows.len(), 1);
     }
 }

@@ -14,6 +14,8 @@ import uuid
 import warnings
 
 from qr_config import load as load_qr_config, valid_label
+from device_tools import maintenance_lock
+from retention import cleanup as cleanup_retention
 
 try:
     from PIL import Image, ImageOps
@@ -57,6 +59,7 @@ def main():
     parser.add_argument('--source', type=Path, default=Path.home() / 'Desktop' / 'Transit Albums')
     parser.add_argument('--qr-file', type=Path, help='private QR config permitting QR-only album folders')
     parser.add_argument('--prepare-only', action='store_true', help='prepare locally; do not connect or upload')
+    parser.add_argument('--keep-releases', type=int, default=3, choices=range(1, 21), metavar='1..20')
     args = parser.parse_args()
     if not args.prepare_only and not args.target:
         parser.error('target is required unless --prepare-only is used')
@@ -119,10 +122,6 @@ def main():
             raise ValueError('An album folder is neither an enrolled card label nor an album in --qr-file.')
         ssh(args.target, f'test -x {REMOTE}/restart-display.sh && '
             f'(systemctl is-active --quiet transit-display.service || systemctl is-active --quiet transit-prototype.service) && grep -q " /init/efad/mp_sd " /proc/mounts')
-        action = json.loads(ssh(args.target, f'cat {REMOTE}/actions.local.json', stdout=subprocess.PIPE).stdout)
-        action.pop('triggerCard', None)
-        action.pop('photoDirectory', None)
-        action['albums'] = manifest
         archive_path = work / 'photos.tar'
         with tarfile.open(archive_path, 'w') as archive:
             for path in sorted(staged.rglob('*.jpg')):
@@ -131,18 +130,25 @@ def main():
         available = ssh(args.target, 'df -Pk /init/efad/mp_sd', stdout=subprocess.PIPE).stdout.decode().splitlines()[-1].split()[3]
         if int(available) * 1024 < archive_path.stat().st_size + 8 * 1024 * 1024:
             raise ValueError('Not enough USB space; previous releases were retained for recovery.')
-        with archive_path.open('rb') as archive:
-            ssh(args.target, f'umask 077; mkdir -p {destination} && tar -xf - -C {destination}', stdin=archive)
-        ssh(args.target, f'umask 077; cat > {REMOTE}/actions.local.json.new',
-            input=(json.dumps(action, indent=2) + '\n').encode())
-        ssh(args.target, f'cp -p {REMOTE}/actions.local.json {REMOTE}/actions.local.json.previous && '
-            f'mv {REMOTE}/actions.local.json.new {REMOTE}/actions.local.json && '
-            f'{REMOTE}/restart-display.sh 3600 live')
-        ssh(args.target, 'systemctl is-active --quiet transit-display.service || systemctl is-active --quiet transit-prototype.service')
+        with maintenance_lock(args.target):
+            # Capture the prior map under the same lock used by deployments/cleanup.
+            current = json.loads(ssh(args.target, f'cat {REMOTE}/actions.local.json', stdout=subprocess.PIPE).stdout)
+            current.pop('triggerCard', None)
+            current.pop('photoDirectory', None)
+            current['albums'] = manifest
+            with archive_path.open('rb') as archive:
+                ssh(args.target, f'umask 077; mkdir -p {destination} && tar -xf - -C {destination}', stdin=archive)
+            ssh(args.target, f'umask 077; cat > {REMOTE}/actions.local.json.new',
+                input=(json.dumps(current, indent=2) + '\n').encode())
+            ssh(args.target, 'sh -s', input=(ROOT / 'publish-actions.sh').read_bytes())
+        try:
+            cleanup_retention(args.target, keep=args.keep_releases, apply=True)
+        except (ValueError, OSError, subprocess.CalledProcessError):
+            print('Album publication succeeded; retention cleanup needs a retry.', file=sys.stderr)
         report = local / 'last-sync.json'
         report.write_text(json.dumps({'source': str(source), 'release': release, 'counts': counts}, indent=2) + '\n')
         os.chmod(report, 0o600)
-        print('Albums synced to USB; display restarted. Previous USB releases retained.')
+        print('Albums synced to USB; display restarted. Current/rollback media retained with bounded history.')
 
 
 if __name__ == '__main__':
